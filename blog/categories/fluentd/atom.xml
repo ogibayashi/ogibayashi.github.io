@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: Fluentd | Tech Notes]]></title>
+  <link href="http://ogibayashi.github.io/blog/categories/fluentd/atom.xml" rel="self"/>
+  <link href="http://ogibayashi.github.io/"/>
+  <updated>2014-06-22T17:37:31+09:00</updated>
+  <id>http://ogibayashi.github.io/</id>
+  <author>
+    <name><![CDATA[OGIBAYASHI Hironori]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Fluentdの障害時動作]]></title>
+    <link href="http://ogibayashi.github.io/blog/2014/06/04/how-fluentd-works-in-case-of-failures/"/>
+    <updated>2014-06-04T23:12:23+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2014/06/04/how-fluentd-works-in-case-of-failures</id>
+    <content type="html"><![CDATA[<p>Fluentdが障害の時にどのような動作をするのか調べてみたので、そのメモ. td-agent 1.1.17(fluentd v0.10.39)で確認したつもりだが、もしかしたらもう少し新しいので確認したケースもあるかも. BufferedOutputを中心に記載している.</p>
+
+<h2>BufferdOutputの基本</h2>
+
+<p>fluentdの特徴の一つとして、fluentd送信先で障害があり、メッセージが送れなかった場合は大抵(BufferedOutputを使っているプラグインであれば)fluentdでバッファリングし、一定時間後に再送してくれる.</p>
+
+<p>このバッファリングのサイズは、BufferedOutputプラグインのbuffer_chunk_limit*buffer_queue_limitで決まる.</p>
+
+<p>これらのデフォルト値は以下に解説付きでまとまっている. (良く参照させて頂いています)
+<a href="http://d.hatena.ne.jp/tagomoris/20130123/1358929254">FluentdでバッファつきOutputPluginを使うときのデフォルト値</a></p>
+
+<h2>何回くらいリトライするの？ リトライの間隔は？</h2>
+
+<p>リトライの回数は、retry_limit(デフォルト 17)で指定された回数まで. 間隔は一定ではなく、段々延びていく. 具体的に間隔を計算してるのは、BufferedOutput#calc_retry_wait.</p>
+
+<p>リトライ間隔は、以下のパラメータでコントロールすることができる</p>
+
+<ul>
+<li>max_retry_wait(デフォルト: nil = 上限なし)</li>
+<li>retry_wait (デフォルト: 1.0)</li>
+</ul>
+
+
+<p>同じメソッドを使って、実際にどれくらいになるのかを計算させてみた. 以下で例えば、1=>2は、一度送信に失敗してから、2回目の送信を試みるまでという意味. 単位は秒. 全てデフォルト値だと、以下の様な感じ. 最大だと、33765秒=9時間22分になる.</p>
+
+<p>```
+1=>2 : 1.0799124443510373
+2=>3 : 1.8141315928054327
+3=>4 : 3.5115188260172046
+4=>5 : 7.106397160810471
+5=>6 : 14.175590112052593
+6=>7 : 31.434005639868758
+7=>8 : 68.4743252224448
+8=>9 : 116.47949944913451
+9=>10 : 279.97276701667636
+10=>11 : 487.69976826480445
+11=>12 : 909.7729519328531
+12=>13 : 2125.0559803853725
+13=>14 : 3717.0255349933364
+14=>15 : 8658.913465429461
+15=>16 : 18189.354025481873
+16=>17 : 33765.98470398931</p>
+
+<p>```</p>
+
+<p>例えば、max_retry_wait=120とすると、以下のようになる. 何回リトライしても、リトライ間隔の上限はmax_retry_waitまでになる.</p>
+
+<p>```
+1=>2 : 1.0717022666140232
+2=>3 : 1.9866738239982864
+3=>4 : 3.9258714996769903
+4=>5 : 7.002702902759963
+5=>6 : 15.817343449261045
+6=>7 : 34.49173945537066
+7=>8 : 65.98469012616731
+8=>9 : 120
+9=>10 : 120
+10=>11 : 120
+11=>12 : 120
+12=>13 : 120
+13=>14 : 120
+14=>15 : 120
+15=>16 : 120
+16=>17 : 120</p>
+
+<p>```</p>
+
+<p>retry_waitを半分の0.5にすると、全てのリトライ間隔が半分になる.</p>
+
+<p>```
+1=>2 : 0.46442639898905974
+2=>3 : 0.9688421553729557
+3=>4 : 2.2291735347851613
+4=>5 : 3.545406346443683
+5=>6 : 7.824124603156501
+6=>7 : 17.564462446502926
+7=>8 : 30.97024814321994
+8=>9 : 71.84343582620227
+9=>10 : 127.87010583643446
+10=>11 : 286.751861977861
+11=>12 : 551.32668884554
+12=>13 : 1077.2785515357239
+13=>14 : 2095.196745718026
+14=>15 : 3995.080966184667
+15=>16 : 9131.408473518048
+16=>17 : 16810.484835714517</p>
+
+<p>```</p>
+
+<p>リトライの頻度を増やす(リトライ間隔を減らす)場合は、併せてretry_limitも変更しないと、早々にリトライアウトしてしまう、ということになるので注意.</p>
+
+<h2>リトライ回数が超過したら？</h2>
+
+<p>リトライ回数を超過した場合、secodaryディレクティブを指定しておけば、そちらに出力される. 通常は、ファイルに出力しておいて、後からリカバリに使う、というケースが多いと思う.</p>
+
+<p>```
+  <secondary></p>
+
+<pre><code>type file
+path /path/to/forward-failed
+</code></pre>
+
+<p>  </secondary>
+```</p>
+
+<p>このようなケースでは、ログに以下のように出力される</p>
+
+<p>```
+2014-06-22 07:06:40 +0900 [warn]: fluent/output.rb:352:rescue in try_flush: retry count exceededs limit. falling back to secondary output.</p>
+
+<p>```</p>
+
+<h2>キューが溢れたら？</h2>
+
+<p>キュー(バッファ)が溢れると、fluentdのログに以下のようなメッセージが出る.</p>
+
+<p>```
+2014-05-25 11:30:23 +0900 [warn]: fluent/engine.rb:149:rescue in emit_stream: emit transaction failed  error_class=Fluent::BufferQueueLimitError error=#&lt;Fluent::BufferQueueLimitError: queue size exceeds limit></p>
+
+<p>```</p>
+
+<p>この場合、inputプラグインがEngine.emitを実行する際にExceptionが発生する. プラグインが、これをrescueしていない場合、inputプラグインは停止する. rescueしている場合はinputプラグインの実装次第だが、大抵Exceptionは無視されてemitしたデータは破棄される.
+(既に溜めるためのキューがあふれているので、それしか無い)</p>
+
+<h2>送信先が復活したら?</h2>
+
+<p>再送中に送信先が復活し、再送に成功した場合は以下の様なメッセージが出力される.</p>
+
+<p><code>
+2014-05-25 11:33:01 +0900 [warn]: fluent/output.rb:312:try_flush: retry succeeded. instance=70365422937420
+</code></p>
+
+<p>ここで、注意点として送信先が復活してもすぐに再送してくれるわけではない. これは、送信先とのハートビートを行っているout_forwardでも一緒. BufferedOutput#try_flushのコードを見ると分かるが、リトライ中で、まだ次のリトライ時刻に達していない場合は、送信は行わない.</p>
+
+<p>なので、retryを繰り返して再送間隔が延びている場合は、次の再送タイミングになるまでキューが溜まり続ける(もしくは、既に溢れている場合は溢れ続ける)</p>
+
+<h2>キューを強制的に送信することはできないの？</h2>
+
+<p>リトライ中の場合以外であれば、fluentdのプロセスにSIGUSR1を送ることでキューが吐き出される. リトライ中の場合は、使用しているバッファプラグインによって挙動が異なるが</p>
+
+<ul>
+<li>buf_memoryの場合
+
+<ul>
+<li>プロセス停止時に全てのキューが吐き出される.</li>
+</ul>
+</li>
+<li>buf_fileの場合
+
+<ul>
+<li>flush_at_shutdownがtrue(デフォルト false)の場合のみ、プロセス停止時に全てのキューが吐き出される.</li>
+</ul>
+</li>
+</ul>
+
+
+<p>長くなったのでここまで.</p>
+]]></content>
+  </entry>
+  
+</feed>
