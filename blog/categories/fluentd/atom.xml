@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Fluentd | Tech Notes]]></title>
   <link href="http://ogibayashi.github.io/blog/categories/fluentd/atom.xml" rel="self"/>
   <link href="http://ogibayashi.github.io/"/>
-  <updated>2014-06-22T17:37:31+09:00</updated>
+  <updated>2014-07-03T15:08:00+09:00</updated>
   <id>http://ogibayashi.github.io/</id>
   <author>
     <name><![CDATA[OGIBAYASHI Hironori]]></name>
@@ -156,7 +156,9 @@ path /path/to/forward-failed
 
 <h2>キューを強制的に送信することはできないの？</h2>
 
-<p>リトライ中の場合以外であれば、fluentdのプロセスにSIGUSR1を送ることでキューが吐き出される. リトライ中の場合は、使用しているバッファプラグインによって挙動が異なるが</p>
+<p>リトライ中の場合以外であれば、fluentdのプロセスにSIGUSR1を送ることでキューが吐き出される. リトライ中の場合は、次のリトライタイミングまでは送信されない. 全てのキューを吐き出すには、プロセスを停止するしかない.</p>
+
+<p>プロセス停止時の挙動は使用しているバッファプラグインによって異なるが</p>
 
 <ul>
 <li>buf_memoryの場合
