@@ -4,7 +4,7 @@
   <title><![CDATA[Tech Notes]]></title>
   <link href="http://ogibayashi.github.io/atom.xml" rel="self"/>
   <link href="http://ogibayashi.github.io/"/>
-  <updated>2014-09-17T01:02:00+09:00</updated>
+  <updated>2014-09-17T01:03:18+09:00</updated>
   <id>http://ogibayashi.github.io/</id>
   <author>
     <name><![CDATA[OGIBAYASHI Hironori]]></name>
@@ -131,6 +131,7 @@
 
 <ul>
 <li>最近、Elasticsearchを真面目に使い始めてみたので、どのトークも大変参考になった. 特に、 @satully 氏の話は良かった</li>
+<li>結構、みんなAWSなんだな</li>
 <li>懇親会で、発表についてのもう少し詳しい話とか、他の人がどんな感じに使ってるとか聞けたので、そっちも良かった. しかも参加費無料. 素晴らしい.</li>
 <li>主催の@johtaniさん、会場提供のリクルートテクノロジーズさんに感謝.</li>
 </ul>
