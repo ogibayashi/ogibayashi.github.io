@@ -1,0 +1,352 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>第6回Elasticsearch勉強会 - Tech Notes</title>
+  <meta name="author" content="OGIBAYASHI Hironori">
+
+  
+  <meta name="description" content="第6回Elasticsearch勉強会に参加したので、記憶が新しいうちにメモ. 内容は資料を見れば分かると思うので、個人的に特に記憶に残ったポイントと、感想のみ. Aggregationあれこれ @johtani 氏 ElasticsearchのAggregation機能を使うと、SQLで言う集計 &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://ogibayashi.github.io/blog/2014/09/17/elasticsearch-study-6th">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="Tech Notes" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">Tech Notes</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:ogibayashi.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">第6回Elasticsearch勉強会</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-09-17T00:19:06+09:00" pubdate data-updated="true">Sep 17<span>th</span>, 2014</time>
+        
+           | <a href="#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>第6回Elasticsearch勉強会に参加したので、記憶が新しいうちにメモ. 内容は資料を見れば分かると思うので、個人的に特に記憶に残ったポイントと、感想のみ.</p>
+
+<h2>Aggregationあれこれ @johtani 氏</h2>
+
+<ul>
+<li>ElasticsearchのAggregation機能を使うと、SQLで言う集計 group by 的なものができると、という話</li>
+<li>動きとしては、各shard内でaggregateし、最後にその結果を集約する、という形. 普通のqueryと変わらない</li>
+<li>クエリの種類によっては、正確な値ではなく近似値だったりする</li>
+<li>Field Collapsingという、URLごとにtop Nを検索するようなこともできる</li>
+<li>個人的な感想
+
+<ul>
+<li>便利な機能なので、是非使いたい. 現状だとKibana3で使えないのがネックだけど、Kibana4だと使えるようになるらしいので期待</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>秒間3万の広告配信ログをElasticSearchで リアルタイム集計してきた戦いの記録 @satully 氏</h2>
+
+<ul>
+<li><a href="http://www.slideshare.net/Satully/elasticsearch-study6threaltime20140916">資料</a></li>
+<li>商用での利用事例、という意味ですごく興味深かった</li>
+<li>DSPの配信システムで利用. 最大秒間30000ログ. 1.5TB/日くらい</li>
+<li>各サーバのログ &ndash;> fluentd &ndash;> Elasticsearch &ndash;> MySQL/Redis という構成</li>
+<li>fluentdは10インスタンス</li>
+<li>ElasticsearchはCoordinate:2ノード, Search:2ノード, Data:28ノード.全てAWSのr3.largeインスタンス. メモリは30GBくらい？
+
+<ul>
+<li>diskは途中でSSDに変えた</li>
+<li>CoordinateとSearchを分離する、というのは世間で見かけるけど、実際に負荷をみると必要性が疑問</li>
+<li>1日1index, 1index12shard, 1レプリ.</li>
+</ul>
+</li>
+<li>単純なログのinsertのみではなく、Bidと紐付けるべきログが来ると、元のBidのログに項目を追加する. fluentd pluginとして実装</li>
+<li>運用ツールとしては、Elasticsearchのpluginとしてhead, bigdesk, ElasticHQ. 死活監視やfluentdのメトリックにはZABBIX</li>
+<li>個人的な感想
+
+<ul>
+<li>サーバスペック、台数、流量の具体的な事例としてとても参考になった</li>
+<li>indexサイズはかなり大きくなるけど、いけるものなんだ.</li>
+<li>お金の計算に関わる部分に、fluentdとかElasticsearchとか使っている、というのに驚いた</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>Elasticsearch 日本語スキーマレス環境構築と、ついでに多言語対応 @9215 氏</h2>
+
+<ul>
+<li><a href="https://speakerdeck.com/kunihikokido/elasticsearch-ri-ben-yu-sukimaresuhuan-jing-gou-zhu-to-tuideniduo-yan-yu-dui-ying">資料</a></li>
+<li>スキーマをちゃんと設計して、それに合わせてマッピング定義するのは面倒. どんなフィールドでどんなマッピングが最適、とか個別に設計すると人材がスケールしない.</li>
+<li>そこで、dynamic templateとindex templateを使い、ノウハウが必要な部分はtemplateに集約、各利用者(データを投入する人)にはフィールド名のネーミングルールを周知する、というアプローチにした</li>
+<li>例えば、利用する言語を&#8221;language&#8221;というフィールドの値として設定し、template側でそれに合わせて適切なanalyzerを定義しておくことで、多言語に対してもうまくindexできる.</li>
+<li>個人的な感想
+
+<ul>
+<li>確かに、どんな型にして、どんなanalyzerにして、とかはノウハウの部分になるので、それをtemplateに集約するのはとても良いアプローチだと思った</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>elasticsearchソースコードを読みはじめてみた @furandon_pig 氏</h2>
+
+<ul>
+<li>Elasticsearchのソースコードを読み始めてみた</li>
+<li>開発者の人には、はじめにREST APIを受けて検索する部分の動作をみてみるといいよ、と言われたけど、それがどこか分からなかったので、起動の部分を追いかけてみた話</li>
+<li>個人的な感想
+
+<ul>
+<li>ちょうど、そろそろソースみないと、と思っていたのでそのとっかかりとして大変参考になった</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>(LT)Elasticsearch RerouteAPIを使ったシャード配置の制御 @pisatoshi 氏</h2>
+
+<ul>
+<li><a href="https://speakerdeck.com/pisatoshi/elasticsearch-rerouteapiwoshi-tutasiyadopei-zhi-falsezhi-yu">資料</a></li>
+<li>Reroute APIを使って、具体的にどのシャードをどこに配置するとかの制御ができるよ、という話</li>
+<li>リバランスを有効にしていると、APIでシャードを別のノードに配置しても、リバランスされてしまうので注意</li>
+<li>個人的な感想
+
+<ul>
+<li>オチがとてもおもしろかった.</li>
+<li>Reroute APIって、制御できるのは良いけど、逆にいちいち制御するのはやってられないし、どーいう場面で使うのだろう、と思った.</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>(LT)検索のダウンタイム0でバックアップからIndexをリストアする方法 @k_bigwheel 氏</h2>
+
+<ul>
+<li><a href="http://www.slideshare.net/kbigwheel/0index-39143333">資料</a></li>
+<li>indexのスナップショットを取れるようになったけど、普通にやるとリストア対象のindexを一旦closeしないといけない. サービスの継続を考えると、ダウンタイム無しでやりたい、という話</li>
+<li>予めクライアントからはalias経由でアクセスするようにしておく. aliasの切り替えはatomicにできるので、それを利用して、リストア完了後にスッパリ切り替える、という形にする</li>
+<li>個人的な感想
+
+<ul>
+<li>リストアだけでなく、mappingを変えるためにindexしなおすとか、aliasを使うと便利な場面はありそう</li>
+<li>しかし、自分の環境はfluentdで&#8221;name-YYYY.MM.DD&#8221;の形でindexを作っているので、この場合aliasはどうしたらいいんだろう</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>全体所感</h2>
+
+<ul>
+<li>最近、Elasticsearchを真面目に使い始めてみたので、どのトークも大変参考になった. 特に、 @satully 氏の話は良かった</li>
+<li>懇親会で、発表についてのもう少し詳しい話とか、他の人がどんな感じに使ってるとか聞けたので、そっちも良かった. しかも参加費無料. 素晴らしい.</li>
+<li>主催の@johtaniさん、会場提供のリクルートテクノロジーズさんに感謝.</li>
+</ul>
+
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">OGIBAYASHI Hironori</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-09-17T00:19:06+09:00" pubdate data-updated="true">Sep 17<span>th</span>, 2014</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/elasticsearch/'>elasticsearch</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://ogibayashi.github.io/blog/2014/09/17/elasticsearch-study-6th/" data-via="" data-counturl="http://ogibayashi.github.io/blog/2014/09/17/elasticsearch-study-6th/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2014/08/27/linux-network-experiment-1/" title="Previous Post: Linuxネットワーク周りの実験1">&laquo; Linuxネットワーク周りの実験1</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+  <section>
+    <h1>Comments</h1>
+    <div id="disqus_thread" aria-live="polite"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+</div>
+  </section>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/09/17/elasticsearch-study-6th/">第6回Elasticsearch勉強会</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/08/27/linux-network-experiment-1/">Linuxネットワーク周りの実験1</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/06/04/how-fluentd-works-in-case-of-failures/">Fluentdの障害時動作</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/02/26/about-puppet-1/">Puppetを使っていて思ったことなどをまとめてみる</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 - OGIBAYASHI Hironori -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+<script type="text/javascript">
+      var disqus_shortname = 'technotes-ogibayashi';
+      
+        
+        // var disqus_developer = 1;
+        var disqus_identifier = 'http://ogibayashi.github.io/blog/2014/09/17/elasticsearch-study-6th/';
+        var disqus_url = 'http://ogibayashi.github.io/blog/2014/09/17/elasticsearch-study-6th/';
+        var disqus_script = 'embed.js';
+      
+    (function () {
+      var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+      dsq.src = '//' + disqus_shortname + '.disqus.com/' + disqus_script;
+      (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    }());
+</script>
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

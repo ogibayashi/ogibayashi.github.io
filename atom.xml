@@ -4,7 +4,7 @@
   <title><![CDATA[Tech Notes]]></title>
   <link href="http://ogibayashi.github.io/atom.xml" rel="self"/>
   <link href="http://ogibayashi.github.io/"/>
-  <updated>2014-07-19T07:30:19+09:00</updated>
+  <updated>2014-09-17T01:02:00+09:00</updated>
   <id>http://ogibayashi.github.io/</id>
   <author>
     <name><![CDATA[OGIBAYASHI Hironori]]></name>
@@ -12,6 +12,310 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[第6回Elasticsearch勉強会]]></title>
+    <link href="http://ogibayashi.github.io/blog/2014/09/17/elasticsearch-study-6th/"/>
+    <updated>2014-09-17T00:19:06+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2014/09/17/elasticsearch-study-6th</id>
+    <content type="html"><![CDATA[<p>第6回Elasticsearch勉強会に参加したので、記憶が新しいうちにメモ. 内容は資料を見れば分かると思うので、個人的に特に記憶に残ったポイントと、感想のみ.</p>
+
+<h2>Aggregationあれこれ @johtani 氏</h2>
+
+<ul>
+<li>ElasticsearchのAggregation機能を使うと、SQLで言う集計 group by 的なものができると、という話</li>
+<li>動きとしては、各shard内でaggregateし、最後にその結果を集約する、という形. 普通のqueryと変わらない</li>
+<li>クエリの種類によっては、正確な値ではなく近似値だったりする</li>
+<li>Field Collapsingという、URLごとにtop Nを検索するようなこともできる</li>
+<li>個人的な感想
+
+<ul>
+<li>便利な機能なので、是非使いたい. 現状だとKibana3で使えないのがネックだけど、Kibana4だと使えるようになるらしいので期待</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>秒間3万の広告配信ログをElasticSearchで リアルタイム集計してきた戦いの記録 @satully 氏</h2>
+
+<ul>
+<li><a href="http://www.slideshare.net/Satully/elasticsearch-study6threaltime20140916">資料</a></li>
+<li>商用での利用事例、という意味ですごく興味深かった</li>
+<li>DSPの配信システムで利用. 最大秒間30000ログ. 1.5TB/日くらい</li>
+<li>各サーバのログ &ndash;> fluentd &ndash;> Elasticsearch &ndash;> MySQL/Redis という構成</li>
+<li>fluentdは10インスタンス</li>
+<li>ElasticsearchはCoordinate:2ノード, Search:2ノード, Data:28ノード.全てAWSのr3.largeインスタンス. メモリは30GBくらい？
+
+<ul>
+<li>diskは途中でSSDに変えた</li>
+<li>CoordinateとSearchを分離する、というのは世間で見かけるけど、実際に負荷をみると必要性が疑問</li>
+<li>1日1index, 1index12shard, 1レプリ.</li>
+</ul>
+</li>
+<li>単純なログのinsertのみではなく、Bidと紐付けるべきログが来ると、元のBidのログに項目を追加する. fluentd pluginとして実装</li>
+<li>運用ツールとしては、Elasticsearchのpluginとしてhead, bigdesk, ElasticHQ. 死活監視やfluentdのメトリックにはZABBIX</li>
+<li>個人的な感想
+
+<ul>
+<li>サーバスペック、台数、流量の具体的な事例としてとても参考になった</li>
+<li>indexサイズはかなり大きくなるけど、いけるものなんだ.</li>
+<li>お金の計算に関わる部分に、fluentdとかElasticsearchとか使っている、というのに驚いた</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>Elasticsearch 日本語スキーマレス環境構築と、ついでに多言語対応 @9215 氏</h2>
+
+<ul>
+<li><a href="https://speakerdeck.com/kunihikokido/elasticsearch-ri-ben-yu-sukimaresuhuan-jing-gou-zhu-to-tuideniduo-yan-yu-dui-ying">資料</a></li>
+<li>スキーマをちゃんと設計して、それに合わせてマッピング定義するのは面倒. どんなフィールドでどんなマッピングが最適、とか個別に設計すると人材がスケールしない.</li>
+<li>そこで、dynamic templateとindex templateを使い、ノウハウが必要な部分はtemplateに集約、各利用者(データを投入する人)にはフィールド名のネーミングルールを周知する、というアプローチにした</li>
+<li>例えば、利用する言語を&#8221;language&#8221;というフィールドの値として設定し、template側でそれに合わせて適切なanalyzerを定義しておくことで、多言語に対してもうまくindexできる.</li>
+<li>個人的な感想
+
+<ul>
+<li>確かに、どんな型にして、どんなanalyzerにして、とかはノウハウの部分になるので、それをtemplateに集約するのはとても良いアプローチだと思った</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>elasticsearchソースコードを読みはじめてみた @furandon_pig 氏</h2>
+
+<ul>
+<li>Elasticsearchのソースコードを読み始めてみた</li>
+<li>開発者の人には、はじめにREST APIを受けて検索する部分の動作をみてみるといいよ、と言われたけど、それがどこか分からなかったので、起動の部分を追いかけてみた話</li>
+<li>個人的な感想
+
+<ul>
+<li>ちょうど、そろそろソースみないと、と思っていたのでそのとっかかりとして大変参考になった</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>(LT)Elasticsearch RerouteAPIを使ったシャード配置の制御 @pisatoshi 氏</h2>
+
+<ul>
+<li><a href="https://speakerdeck.com/pisatoshi/elasticsearch-rerouteapiwoshi-tutasiyadopei-zhi-falsezhi-yu">資料</a></li>
+<li>Reroute APIを使って、具体的にどのシャードをどこに配置するとかの制御ができるよ、という話</li>
+<li>リバランスを有効にしていると、APIでシャードを別のノードに配置しても、リバランスされてしまうので注意</li>
+<li>個人的な感想
+
+<ul>
+<li>オチがとてもおもしろかった.</li>
+<li>Reroute APIって、制御できるのは良いけど、逆にいちいち制御するのはやってられないし、どーいう場面で使うのだろう、と思った.</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>(LT)検索のダウンタイム0でバックアップからIndexをリストアする方法 @k_bigwheel 氏</h2>
+
+<ul>
+<li><a href="http://www.slideshare.net/kbigwheel/0index-39143333">資料</a></li>
+<li>indexのスナップショットを取れるようになったけど、普通にやるとリストア対象のindexを一旦closeしないといけない. サービスの継続を考えると、ダウンタイム無しでやりたい、という話</li>
+<li>予めクライアントからはalias経由でアクセスするようにしておく. aliasの切り替えはatomicにできるので、それを利用して、リストア完了後にスッパリ切り替える、という形にする</li>
+<li>個人的な感想
+
+<ul>
+<li>リストアだけでなく、mappingを変えるためにindexしなおすとか、aliasを使うと便利な場面はありそう</li>
+<li>しかし、自分の環境はfluentdで&#8221;name-YYYY.MM.DD&#8221;の形でindexを作っているので、この場合aliasはどうしたらいいんだろう</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>全体所感</h2>
+
+<ul>
+<li>最近、Elasticsearchを真面目に使い始めてみたので、どのトークも大変参考になった. 特に、 @satully 氏の話は良かった</li>
+<li>懇親会で、発表についてのもう少し詳しい話とか、他の人がどんな感じに使ってるとか聞けたので、そっちも良かった. しかも参加費無料. 素晴らしい.</li>
+<li>主催の@johtaniさん、会場提供のリクルートテクノロジーズさんに感謝.</li>
+</ul>
+
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Linuxネットワーク周りの実験1]]></title>
+    <link href="http://ogibayashi.github.io/blog/2014/08/27/linux-network-experiment-1/"/>
+    <updated>2014-08-27T19:02:47+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2014/08/27/linux-network-experiment-1</id>
+    <content type="html"><![CDATA[<h2>はじめに</h2>
+
+<p>Linuxネットワーク周りの仕組みと、カーネルパラメータの調整方法を知りたくて実験してみた. 目標としては、ネットワークで何かしらボトルネックが発生している際に、何を見て、どうパラメータなどを調整するべきなのかを知りたい.</p>
+
+<h2>使ったプログラムと環境</h2>
+
+<p>Rubyの標準ライブラリでサーバとクライアントを作った.</p>
+
+<ul>
+<li><a href="https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-client1-rb">https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-client1-rb</a></li>
+<li><a href="https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-server1-rb">https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-server1-rb</a></li>
+</ul>
+
+
+<p>サーバ環境としては、クライアント用、サーバ用に物理サーバを各1台用意した. OSはCentOS 6.2. 初期状態では、カーネルパラメータはいじっていない.</p>
+
+<h2>わかったことのまとめ</h2>
+
+<h2>backlogの実験1: listen時のbacklogを超えてクライアントが接続する</h2>
+
+<p>サーバプログラムを、listen()時のbacklogサイズを指定して起動. acceptはしない. 従って、クライアントが接続できる数は、backlogサイズで制限される想定.</p>
+
+<pre><code># ./server1.rb -b 10
+</code></pre>
+
+<p>クライアントは、100多重で接続する</p>
+
+<pre><code># ./client1.rb -h 192.168.1.3 -n 100
+</code></pre>
+
+<h3>結果</h3>
+
+<p>この実験の結果. 詳細は後述.</p>
+
+<ul>
+<li>クライアントからの接続のうち、backlogサイズ+1が接続成功、残りはタイムアウトした. 想定通り.</li>
+<li>サーバ側は、backlog + 1(11本)がESTABLISHED状態になる. SYN_RECVは4本. SYN_RECVの数が何で決まるのか不明</li>
+<li>クライアント側は、サーバでESTABLISHED+SYN_RECV状態のものがESTABLISHEDに見える. 残りはSYN_SENT.</li>
+<li>クライアントはSYN_SENTだが、サーバでは無視されているコネクションが多数存在. netstatにも計上されていない.</li>
+</ul>
+
+
+<h3>セッション状況(netstat)</h3>
+
+<p>サーバ側. backlogで指定した値+1となった. SYN_RECV状態の4本、というのが何に依存しているのかが不明</p>
+
+<pre><code># netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
+ 11 ESTABLISHED
+  1 LISTEN
+  4 SYN_RECV
+</code></pre>
+
+<p>クライアント側. サーバでSYN_RECVとなっているもの含め、15本がESTABLISHED、残りはSYN_SENTでサーバからのSYN-ACKを待っている.</p>
+
+<pre><code># netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
+ 15 ESTABLISHED
+ 85 SYN_SENT
+</code></pre>
+
+<p>しばらくすると、クライアント側は15本のESTABLISHEDのみとなった.</p>
+
+<pre><code>[root@psdata4 ~]# netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
+ 15 ESTABLISHED
+</code></pre>
+
+<h3>ネットワーク統計情報 (netstat -s)</h3>
+
+<p>backlogを溢れて落とされた分は、以下のメトリックに現れると想定. 初期状態は以下の値.</p>
+
+<pre><code>17920 SYNs to LISTEN sockets ignored
+</code></pre>
+
+<p>実行後の値. +14なので、SYN_SENTのセッション達の分は含まれていなそう</p>
+
+<pre><code>17934 SYNs to LISTEN sockets ignored
+</code></pre>
+
+<h2>backlogの実験2: backlogと同数のクライアントが接続する</h2>
+
+<p>サーバ側のbacklogは100とする. ここでも、acceptはしないので、セッションが溜まっていく想定.</p>
+
+<pre><code># ./networktest/server1.rb -b 100
+</code></pre>
+
+<p>クライアントも100多重で接続する.</p>
+
+<pre><code># ./networktest/client1.rb -h 192.168.1.3 -n 100
+</code></pre>
+
+<h3>結果</h3>
+
+<p>接続要求数分(100セッション)、ESTABLISHするようになった</p>
+
+<h3>セッション状況(netstat)</h3>
+
+<p>上がサーバ、下がクライアント. どちらから見ても100本のセッションがESTABLISHEDになっている.</p>
+
+<pre><code># netstat -na | grep 11000 | awk '{print $6}' | sort | uniq -c
+  100 ESTABLISHED
+  1 LISTEN
+</code></pre>
+
+<p>   # netstat &mdash;tcp -na | grep :11000 | awk &lsquo;{print $6}&rsquo; | sort | uniq -c</p>
+
+<pre><code>  100 ESTABLISHED
+</code></pre>
+
+<h3>ネットワーク統計情報(netstat -s)</h3>
+
+<p>開始前.</p>
+
+<pre><code>17830  SYNs to LISTEN sockets ignored
+</code></pre>
+
+<p>終了後. 特にこのメトリックの値は増えていない</p>
+
+<pre><code>17830   SYNs to LISTEN sockets ignored
+</code></pre>
+
+<h2>backlogの実験3: backlog, 接続数を200 (>somaxconn) とする.</h2>
+
+<p>今度は、前のケースと同じだが接続数を200にしてみる. somaxconnのデフォルト値が128なので、これに引っかかる想定</p>
+
+<pre><code># sysctl -a | grep somax
+net.core.somaxconn = 128
+</code></pre>
+
+<p>サーバ側.</p>
+
+<pre><code># ./server1.rb -b 200
+</code></pre>
+
+<p>クライアント側.</p>
+
+<pre><code># ./client1.rb -h 192.168.1.3 -n 200
+</code></pre>
+
+<h3>結果</h3>
+
+<p>接続確立できたセッション数は129(somaxconn + 1)だった</p>
+
+<h3>セッション状況(netstat)</h3>
+
+<p>サーバ側. 129セッションがESTABLISHEDになっている</p>
+
+<pre><code># netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
+129 ESTABLISHED
+  1 LISTEN
+  4 SYN_RECV
+</code></pre>
+
+<p>クライアント側. サーバ側でESTABLISED/SYN_RECVとなっているセッションがESTABLISHEDに見えている.</p>
+
+<pre><code>[root@psdata4 ~]# netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
+133 ESTABLISHED
+ 67 SYN_SENT
+</code></pre>
+
+<h4>ネットワーク統計情報(netstat -s)</h4>
+
+<p>開始前</p>
+
+<pre><code># netstat -s | grep SYNs
+18096 SYNs to LISTEN sockets ignored
+</code></pre>
+
+<p>終了後. やはり、増えているが67セッションがSYN_SENTのままだったことを考えると少ない.</p>
+
+<pre><code># netstat -s | grep SYNs
+18112 SYNs to LISTEN sockets ignored
+</code></pre>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Fluentdの障害時動作]]></title>
