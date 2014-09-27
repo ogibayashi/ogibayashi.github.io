@@ -9,7 +9,7 @@
   <meta name="author" content="OGIBAYASHI Hironori">
 
   
-  <meta name="description" content="第6回Elasticsearch勉強会に参加したので、記憶が新しいうちにメモ. 内容は資料を見れば分かると思うので、個人的に特に記憶に残ったポイントと、感想のみ. Aggregationあれこれ @johtani 氏 ElasticsearchのAggregation機能を使うと、SQLで言う集計 &hellip;">
+  <meta name="description" content="Getting Stated with OpenShiftを読んだので、簡単にまとめ. とりあえず4章まで. この本について OpenShiftの管理者ではなく、Webアプリケーション開発者向けの本. OpenShift Onlineを使って、どのようにWebアプリケーションを動かすことができるか &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -63,6 +63,157 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/09/27/getting-started-with-openshift/">Getting Stated With OpenShiftを読んだ</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-09-27T08:16:08+09:00" pubdate data-updated="true">Sep 27<span>th</span>, 2014</time>
+        
+           | <a href="/blog/2014/09/27/getting-started-with-openshift/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2014/09/27/getting-started-with-openshift/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p><a href="http://shop.oreilly.com/product/0636920033226.do">Getting Stated with OpenShift</a>を読んだので、簡単にまとめ. とりあえず4章まで.</p>
+
+<h2>この本について</h2>
+
+<p>OpenShiftの管理者ではなく、Webアプリケーション開発者向けの本. OpenShift Onlineを使って、どのようにWebアプリケーションを動かすことができるか、ということが書いてある</p>
+
+<h2>1. Introduction</h2>
+
+<ul>
+<li>OpenShiftとは？
+
+<ul>
+<li>RedHatが提供するPaaS</li>
+</ul>
+</li>
+<li>3つのバージョンがある
+
+<ul>
+<li>OpenShift Origin : オープンソースであり、最新版. 自分の環境に入れて使うことができる. OnlineやEnterpriseのUpstreamとなる.</li>
+<li>OpenShift Online : RedHatが提供するクラウドサービス版. AWS上で動いており、アカウントを作ればOpenShiftの環境を使うことができる.  本書はこれを対象に書かれている.</li>
+<li>OpenShift Enterprise : Productionでの利用を想定し、RedHatによりサポートされる安定版. 自分でインストールして使う.</li>
+</ul>
+</li>
+<li>基本的な用語
+
+<ul>
+<li>Application : OpenShift上で動かすWebアプリケーション</li>
+<li>Gear : サーバコンテナ. 使えるリソースに応じて、small, medium, largeの3タイプがある</li>
+<li>Cartridge: Gearに追加する機能の固まり. JBossとか、Pythonとか、DatabaseとかCronとか.</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>2. Creating Application</h2>
+
+<ul>
+<li>OpenShift Onlineを使うための流れは以下の通り
+
+<ul>
+<li>アカウントを作る</li>
+<li>コマンドラインツール(rhc)を入れる. rhcはrubygemなので、<code>gem install rhc</code>で入れることができる</li>
+<li>コマンドラインツールをセットアップする. <code>rhc setup</code>で行う. OpenShiftのAPIをコマンドラインから使うための認証情報などを登録する.</li>
+</ul>
+</li>
+<li>以後、OpenShift上のアプリケーション管理は<code>rhc</code>コマンドで行う</li>
+<li>OpenShiftのアプリケーションを作るには<code>rhc app create insultapp python-2.7</code>のようにする. 引数は、アプリケーション名と言語.
+
+<ul>
+<li>実行すると、アプリケーションにアクセスするためのURLや、GearにSSHログインするためのユーザ名@ホスト名が表示される</li>
+<li>また、カレントディレクトリにGitリポジトリが作成される. このリポジトリ内にアプリケーションのコードや色々な設定が格納される.</li>
+</ul>
+</li>
+<li>アプリケーションを作成する際に、 <code>-g</code>オプションを付けるとautoscaling機能が有効になる. 有効にすると、HAProxyがセットアップされ、アプリケーションがスケールアウトできるようになる
+
+<ul>
+<li>本書では簡略化のためautoscalingは使っていないが、有効にしておいた方が良い</li>
+</ul>
+</li>
+<li>smallのgearであれば無償で使える. 無償版の場合、48時間リクエストが無いとアプリケーションは一旦ディスクに書かれ、次回リクエスト時に再ロードされる (応答に時間がかかる)
+
+<ul>
+<li>お金を払えば、gearを増やしたり、より大きなgearを使ったり、ディスク容量を拡張したり、JBoss EAP等の有償Cartridgeを使ったり、サポートチケットを発行したり、などなどができる.</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>3. Making Code Modifications</h2>
+
+<ul>
+<li>アプリケーション作成時に作成されたGitリポジトリ内にコードを書いて、<code>git push</code>するとデプロイされる</li>
+<li><code>.openshift/action_hooks</code>ディレクトリ内にファイルを作成しておくことで、デプロイの特定のタイミングで任意の処理を実行することができる. (action hook script)</li>
+<li>通常、アプリケーションのデプロイ時にアプリケーションは一旦停止する. <code>.openshift/markers/hot_deploy</code> ファイルを作成しておくと、ホットデプロイが有効になる.</li>
+</ul>
+
+
+<h2>4. Adding Application Components</h2>
+
+<ul>
+<li>Cartridgeを追加することで、アプリケーションに様々な機能を追加することができる(<code>rhc cartridge add &lt;cartridge名&gt;</code>). この章では以下のCartridgeが紹介されている.</li>
+<li>Database
+
+<ul>
+<li>PostgreSQL, MySQL, MongoDB等のデータベースを使うことができる</li>
+<li>アプリケーションがscalableでなければ同じgearに、そうでなければDatabase専用gearが作成され、その中にインストールされる</li>
+<li>追加時に、DBへアクセスするためのアカウントやURL等が表示される</li>
+</ul>
+</li>
+<li>Cron
+
+<ul>
+<li>cronを使うことができる</li>
+<li>git repositoryの<code>openshift/cron/{minutely,hourly,daily,weekly,monthly}/</code>以下にファイルを作成し、<code>git push</code>すると有効になる</li>
+</ul>
+</li>
+<li>Continuous Integration (jenkins)
+
+<ul>
+<li>まず、<code>rhc app create</code>でJenkins用のアプリケーションを作成する</li>
+<li>その上で、元のアプリケーションに<code>rhc cartridge add</code>でJenkinsのクライアントをCartridgeとして追加.</li>
+<li>これにより、アプリケーションをpushした際にJenkins上でビルドやテストが走るようになる. ビルドが失敗した場合、アプリケーションはデプロイされない</li>
+</ul>
+</li>
+<li>Metrics and Monitoring
+
+<ul>
+<li><code>rhc cartridge add metrics-0.1 -a appname</code>のようにすることで、アプリケーションのモニタリング画面が追加される. CPUやメモリの状況等を確認可能</li>
+</ul>
+</li>
+<li>その他にも、コミュニティで開発された多数のCartridgeが存在し、利用することができる.</li>
+</ul>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -213,215 +364,6 @@
 <li>主催の@johtaniさん、会場提供のリクルートテクノロジーズさんに感謝.</li>
 </ul>
 
-</div>
-  
-  
-
-
-    </article>
-  
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/08/27/linux-network-experiment-1/">Linuxネットワーク周りの実験1</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-
-
-
-
-  
-
-
-<time datetime="2014-08-27T19:02:47+09:00" pubdate data-updated="true">Aug 27<span>th</span>, 2014</time>
-        
-           | <a href="/blog/2014/08/27/linux-network-experiment-1/#disqus_thread"
-             data-disqus-identifier="http://ogibayashi.github.io/blog/2014/08/27/linux-network-experiment-1/">Comments</a>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><h2>はじめに</h2>
-
-<p>Linuxネットワーク周りの仕組みと、カーネルパラメータの調整方法を知りたくて実験してみた. 目標としては、ネットワークで何かしらボトルネックが発生している際に、何を見て、どうパラメータなどを調整するべきなのかを知りたい.</p>
-
-<h2>使ったプログラムと環境</h2>
-
-<p>Rubyの標準ライブラリでサーバとクライアントを作った.</p>
-
-<ul>
-<li><a href="https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-client1-rb">https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-client1-rb</a></li>
-<li><a href="https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-server1-rb">https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-server1-rb</a></li>
-</ul>
-
-
-<p>サーバ環境としては、クライアント用、サーバ用に物理サーバを各1台用意した. OSはCentOS 6.2. 初期状態では、カーネルパラメータはいじっていない.</p>
-
-<h2>わかったことのまとめ</h2>
-
-<h2>backlogの実験1: listen時のbacklogを超えてクライアントが接続する</h2>
-
-<p>サーバプログラムを、listen()時のbacklogサイズを指定して起動. acceptはしない. 従って、クライアントが接続できる数は、backlogサイズで制限される想定.</p>
-
-<pre><code># ./server1.rb -b 10
-</code></pre>
-
-<p>クライアントは、100多重で接続する</p>
-
-<pre><code># ./client1.rb -h 192.168.1.3 -n 100
-</code></pre>
-
-<h3>結果</h3>
-
-<p>この実験の結果. 詳細は後述.</p>
-
-<ul>
-<li>クライアントからの接続のうち、backlogサイズ+1が接続成功、残りはタイムアウトした. 想定通り.</li>
-<li>サーバ側は、backlog + 1(11本)がESTABLISHED状態になる. SYN_RECVは4本. SYN_RECVの数が何で決まるのか不明</li>
-<li>クライアント側は、サーバでESTABLISHED+SYN_RECV状態のものがESTABLISHEDに見える. 残りはSYN_SENT.</li>
-<li>クライアントはSYN_SENTだが、サーバでは無視されているコネクションが多数存在. netstatにも計上されていない.</li>
-</ul>
-
-
-<h3>セッション状況(netstat)</h3>
-
-<p>サーバ側. backlogで指定した値+1となった. SYN_RECV状態の4本、というのが何に依存しているのかが不明</p>
-
-<pre><code># netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
- 11 ESTABLISHED
-  1 LISTEN
-  4 SYN_RECV
-</code></pre>
-
-<p>クライアント側. サーバでSYN_RECVとなっているもの含め、15本がESTABLISHED、残りはSYN_SENTでサーバからのSYN-ACKを待っている.</p>
-
-<pre><code># netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
- 15 ESTABLISHED
- 85 SYN_SENT
-</code></pre>
-
-<p>しばらくすると、クライアント側は15本のESTABLISHEDのみとなった.</p>
-
-<pre><code>[root@psdata4 ~]# netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
- 15 ESTABLISHED
-</code></pre>
-
-<h3>ネットワーク統計情報 (netstat -s)</h3>
-
-<p>backlogを溢れて落とされた分は、以下のメトリックに現れると想定. 初期状態は以下の値.</p>
-
-<pre><code>17920 SYNs to LISTEN sockets ignored
-</code></pre>
-
-<p>実行後の値. +14なので、SYN_SENTのセッション達の分は含まれていなそう</p>
-
-<pre><code>17934 SYNs to LISTEN sockets ignored
-</code></pre>
-
-<h2>backlogの実験2: backlogと同数のクライアントが接続する</h2>
-
-<p>サーバ側のbacklogは100とする. ここでも、acceptはしないので、セッションが溜まっていく想定.</p>
-
-<pre><code># ./networktest/server1.rb -b 100
-</code></pre>
-
-<p>クライアントも100多重で接続する.</p>
-
-<pre><code># ./networktest/client1.rb -h 192.168.1.3 -n 100
-</code></pre>
-
-<h3>結果</h3>
-
-<p>接続要求数分(100セッション)、ESTABLISHするようになった</p>
-
-<h3>セッション状況(netstat)</h3>
-
-<p>上がサーバ、下がクライアント. どちらから見ても100本のセッションがESTABLISHEDになっている.</p>
-
-<pre><code># netstat -na | grep 11000 | awk '{print $6}' | sort | uniq -c
-  100 ESTABLISHED
-  1 LISTEN
-</code></pre>
-
-<p>   # netstat &mdash;tcp -na | grep :11000 | awk &lsquo;{print $6}&rsquo; | sort | uniq -c</p>
-
-<pre><code>  100 ESTABLISHED
-</code></pre>
-
-<h3>ネットワーク統計情報(netstat -s)</h3>
-
-<p>開始前.</p>
-
-<pre><code>17830  SYNs to LISTEN sockets ignored
-</code></pre>
-
-<p>終了後. 特にこのメトリックの値は増えていない</p>
-
-<pre><code>17830   SYNs to LISTEN sockets ignored
-</code></pre>
-
-<h2>backlogの実験3: backlog, 接続数を200 (>somaxconn) とする.</h2>
-
-<p>今度は、前のケースと同じだが接続数を200にしてみる. somaxconnのデフォルト値が128なので、これに引っかかる想定</p>
-
-<pre><code># sysctl -a | grep somax
-net.core.somaxconn = 128
-</code></pre>
-
-<p>サーバ側.</p>
-
-<pre><code># ./server1.rb -b 200
-</code></pre>
-
-<p>クライアント側.</p>
-
-<pre><code># ./client1.rb -h 192.168.1.3 -n 200
-</code></pre>
-
-<h3>結果</h3>
-
-<p>接続確立できたセッション数は129(somaxconn + 1)だった</p>
-
-<h3>セッション状況(netstat)</h3>
-
-<p>サーバ側. 129セッションがESTABLISHEDになっている</p>
-
-<pre><code># netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
-129 ESTABLISHED
-  1 LISTEN
-  4 SYN_RECV
-</code></pre>
-
-<p>クライアント側. サーバ側でESTABLISED/SYN_RECVとなっているセッションがESTABLISHEDに見えている.</p>
-
-<pre><code>[root@psdata4 ~]# netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
-133 ESTABLISHED
- 67 SYN_SENT
-</code></pre>
-
-<h4>ネットワーク統計情報(netstat -s)</h4>
-
-<p>開始前</p>
-
-<pre><code># netstat -s | grep SYNs
-18096 SYNs to LISTEN sockets ignored
-</code></pre>
-
-<p>終了後. やはり、増えているが67セッションがSYN_SENTのままだったことを考えると少ない.</p>
-
-<pre><code># netstat -s | grep SYNs
-18112 SYNs to LISTEN sockets ignored
-</code></pre>
 </div>
   
   
@@ -903,11 +845,11 @@ net.core.somaxconn = 128
   <ul id="recent_posts">
     
       <li class="post">
-        <a href="/blog/2014/09/17/elasticsearch-study-6th/">第6回Elasticsearch勉強会</a>
+        <a href="/blog/2014/09/27/getting-started-with-openshift/">Getting Stated With OpenShiftを読んだ</a>
       </li>
     
       <li class="post">
-        <a href="/blog/2014/08/27/linux-network-experiment-1/">Linuxネットワーク周りの実験1</a>
+        <a href="/blog/2014/09/17/elasticsearch-study-6th/">第6回Elasticsearch勉強会</a>
       </li>
     
       <li class="post">

@@ -1,0 +1,348 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Getting Stated With OpenShiftを読んだ - Tech Notes</title>
+  <meta name="author" content="OGIBAYASHI Hironori">
+
+  
+  <meta name="description" content="Getting Stated with OpenShiftを読んだので、簡単にまとめ. とりあえず4章まで. この本について OpenShiftの管理者ではなく、Webアプリケーション開発者向けの本. OpenShift Onlineを使って、どのようにWebアプリケーションを動かすことができるか &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://ogibayashi.github.io/blog/2014/09/27/getting-started-with-openshift">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="Tech Notes" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">Tech Notes</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:ogibayashi.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Getting Stated With OpenShiftを読んだ</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-09-27T08:16:08+09:00" pubdate data-updated="true">Sep 27<span>th</span>, 2014</time>
+        
+           | <a href="#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p><a href="http://shop.oreilly.com/product/0636920033226.do">Getting Stated with OpenShift</a>を読んだので、簡単にまとめ. とりあえず4章まで.</p>
+
+<h2>この本について</h2>
+
+<p>OpenShiftの管理者ではなく、Webアプリケーション開発者向けの本. OpenShift Onlineを使って、どのようにWebアプリケーションを動かすことができるか、ということが書いてある</p>
+
+<h2>1. Introduction</h2>
+
+<ul>
+<li>OpenShiftとは？
+
+<ul>
+<li>RedHatが提供するPaaS</li>
+</ul>
+</li>
+<li>3つのバージョンがある
+
+<ul>
+<li>OpenShift Origin : オープンソースであり、最新版. 自分の環境に入れて使うことができる. OnlineやEnterpriseのUpstreamとなる.</li>
+<li>OpenShift Online : RedHatが提供するクラウドサービス版. AWS上で動いており、アカウントを作ればOpenShiftの環境を使うことができる.  本書はこれを対象に書かれている.</li>
+<li>OpenShift Enterprise : Productionでの利用を想定し、RedHatによりサポートされる安定版. 自分でインストールして使う.</li>
+</ul>
+</li>
+<li>基本的な用語
+
+<ul>
+<li>Application : OpenShift上で動かすWebアプリケーション</li>
+<li>Gear : サーバコンテナ. 使えるリソースに応じて、small, medium, largeの3タイプがある</li>
+<li>Cartridge: Gearに追加する機能の固まり. JBossとか、Pythonとか、DatabaseとかCronとか.</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>2. Creating Application</h2>
+
+<ul>
+<li>OpenShift Onlineを使うための流れは以下の通り
+
+<ul>
+<li>アカウントを作る</li>
+<li>コマンドラインツール(rhc)を入れる. rhcはrubygemなので、<code>gem install rhc</code>で入れることができる</li>
+<li>コマンドラインツールをセットアップする. <code>rhc setup</code>で行う. OpenShiftのAPIをコマンドラインから使うための認証情報などを登録する.</li>
+</ul>
+</li>
+<li>以後、OpenShift上のアプリケーション管理は<code>rhc</code>コマンドで行う</li>
+<li>OpenShiftのアプリケーションを作るには<code>rhc app create insultapp python-2.7</code>のようにする. 引数は、アプリケーション名と言語.
+
+<ul>
+<li>実行すると、アプリケーションにアクセスするためのURLや、GearにSSHログインするためのユーザ名@ホスト名が表示される</li>
+<li>また、カレントディレクトリにGitリポジトリが作成される. このリポジトリ内にアプリケーションのコードや色々な設定が格納される.</li>
+</ul>
+</li>
+<li>アプリケーションを作成する際に、 <code>-g</code>オプションを付けるとautoscaling機能が有効になる. 有効にすると、HAProxyがセットアップされ、アプリケーションがスケールアウトできるようになる
+
+<ul>
+<li>本書では簡略化のためautoscalingは使っていないが、有効にしておいた方が良い</li>
+</ul>
+</li>
+<li>smallのgearであれば無償で使える. 無償版の場合、48時間リクエストが無いとアプリケーションは一旦ディスクに書かれ、次回リクエスト時に再ロードされる (応答に時間がかかる)
+
+<ul>
+<li>お金を払えば、gearを増やしたり、より大きなgearを使ったり、ディスク容量を拡張したり、JBoss EAP等の有償Cartridgeを使ったり、サポートチケットを発行したり、などなどができる.</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>3. Making Code Modifications</h2>
+
+<ul>
+<li>アプリケーション作成時に作成されたGitリポジトリ内にコードを書いて、<code>git push</code>するとデプロイされる</li>
+<li><code>.openshift/action_hooks</code>ディレクトリ内にファイルを作成しておくことで、デプロイの特定のタイミングで任意の処理を実行することができる. (action hook script)</li>
+<li>通常、アプリケーションのデプロイ時にアプリケーションは一旦停止する. <code>.openshift/markers/hot_deploy</code> ファイルを作成しておくと、ホットデプロイが有効になる.</li>
+</ul>
+
+
+<h2>4. Adding Application Components</h2>
+
+<ul>
+<li>Cartridgeを追加することで、アプリケーションに様々な機能を追加することができる(<code>rhc cartridge add &lt;cartridge名&gt;</code>). この章では以下のCartridgeが紹介されている.</li>
+<li>Database
+
+<ul>
+<li>PostgreSQL, MySQL, MongoDB等のデータベースを使うことができる</li>
+<li>アプリケーションがscalableでなければ同じgearに、そうでなければDatabase専用gearが作成され、その中にインストールされる</li>
+<li>追加時に、DBへアクセスするためのアカウントやURL等が表示される</li>
+</ul>
+</li>
+<li>Cron
+
+<ul>
+<li>cronを使うことができる</li>
+<li>git repositoryの<code>openshift/cron/{minutely,hourly,daily,weekly,monthly}/</code>以下にファイルを作成し、<code>git push</code>すると有効になる</li>
+</ul>
+</li>
+<li>Continuous Integration (jenkins)
+
+<ul>
+<li>まず、<code>rhc app create</code>でJenkins用のアプリケーションを作成する</li>
+<li>その上で、元のアプリケーションに<code>rhc cartridge add</code>でJenkinsのクライアントをCartridgeとして追加.</li>
+<li>これにより、アプリケーションをpushした際にJenkins上でビルドやテストが走るようになる. ビルドが失敗した場合、アプリケーションはデプロイされない</li>
+</ul>
+</li>
+<li>Metrics and Monitoring
+
+<ul>
+<li><code>rhc cartridge add metrics-0.1 -a appname</code>のようにすることで、アプリケーションのモニタリング画面が追加される. CPUやメモリの状況等を確認可能</li>
+</ul>
+</li>
+<li>その他にも、コミュニティで開発された多数のCartridgeが存在し、利用することができる.</li>
+</ul>
+
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">OGIBAYASHI Hironori</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-09-27T08:16:08+09:00" pubdate data-updated="true">Sep 27<span>th</span>, 2014</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/openshift/'>openshift</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://ogibayashi.github.io/blog/2014/09/27/getting-started-with-openshift/" data-via="" data-counturl="http://ogibayashi.github.io/blog/2014/09/27/getting-started-with-openshift/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2014/09/17/elasticsearch-study-6th/" title="Previous Post: 第6回Elasticsearch勉強会">&laquo; 第6回Elasticsearch勉強会</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+  <section>
+    <h1>Comments</h1>
+    <div id="disqus_thread" aria-live="polite"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+</div>
+  </section>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/09/27/getting-started-with-openshift/">Getting Stated With OpenShiftを読んだ</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/09/17/elasticsearch-study-6th/">第6回Elasticsearch勉強会</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/06/04/how-fluentd-works-in-case-of-failures/">Fluentdの障害時動作</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/02/26/about-puppet-1/">Puppetを使っていて思ったことなどをまとめてみる</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 - OGIBAYASHI Hironori -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+<script type="text/javascript">
+      var disqus_shortname = 'technotes-ogibayashi';
+      
+        
+        // var disqus_developer = 1;
+        var disqus_identifier = 'http://ogibayashi.github.io/blog/2014/09/27/getting-started-with-openshift/';
+        var disqus_url = 'http://ogibayashi.github.io/blog/2014/09/27/getting-started-with-openshift/';
+        var disqus_script = 'embed.js';
+      
+    (function () {
+      var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+      dsq.src = '//' + disqus_shortname + '.disqus.com/' + disqus_script;
+      (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    }());
+</script>
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
