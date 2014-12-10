@@ -9,7 +9,7 @@
   <meta name="author" content="OGIBAYASHI Hironori">
 
   
-  <meta name="description" content="Getting Stated with OpenShiftを読んだので、簡単にまとめ. とりあえず4章まで. この本について OpenShiftの管理者ではなく、Webアプリケーション開発者向けの本. OpenShift Onlineを使って、どのようにWebアプリケーションを動かすことができるか &hellip;">
+  <meta name="description" content="実環境でDockerを使い始めてみよう、と思うけど考えないといけないことが色々ありそう。どんなことを考える必要があるか、それぞれどうしていくのが良いか、考えてみる。 導入の目的 以下を目的にする。 アプリケーションのポータビリティ 開発・テスト環境と同じイメージを本番でも利用することで、 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -63,6 +63,178 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/12/10/thinkings-to-start-using-docker1/">Dockerを使い始めるための検討</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-12-10T23:38:27+09:00" pubdate data-updated="true">Dec 10<span>th</span>, 2014</time>
+        
+           | <a href="/blog/2014/12/10/thinkings-to-start-using-docker1/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2014/12/10/thinkings-to-start-using-docker1/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>実環境でDockerを使い始めてみよう、と思うけど考えないといけないことが色々ありそう。どんなことを考える必要があるか、それぞれどうしていくのが良いか、考えてみる。</p>
+
+<h2>導入の目的</h2>
+
+<p>以下を目的にする。</p>
+
+<ul>
+<li>アプリケーションのポータビリティ
+
+<ul>
+<li>開発・テスト環境と同じイメージを本番でも利用することで、環境差異に起因するトラブルを減らす</li>
+<li>サーバが増えた際に、簡単に同じアプリケーション環境をセットアップできるようにする</li>
+</ul>
+</li>
+<li>リソースの分離
+
+<ul>
+<li>同じサーバに複数のアプリケーションが乗った際に、それぞれの環境やOSリソースを分離し、お互いに影響しないようにする</li>
+</ul>
+</li>
+</ul>
+
+
+<p>導入の対象は、まずはデータをストアしないjavaアプリケーションサーバとする.</p>
+
+<h2>考える事</h2>
+
+<p>いざ、使ってみようと思うと以下のような点が悩ましくなってきた。</p>
+
+<ul>
+<li>イメージを作る単位</li>
+<li>既存の構成管理ツール(Ansible)との連携</li>
+<li>ネットワークをどうする？外部からどう接続するか</li>
+<li>起動先の環境に依存する部分をどう吸収するか</li>
+</ul>
+
+
+<h2>考えてみる</h2>
+
+<p>さて、どうしようか</p>
+
+<h3>イメージを作る単位</h3>
+
+<p>イメージの差分管理ができる、とは言え何か変わる度に一直線に更新をしていくのもなんか違う気がする.</p>
+
+<p>以下のようにレイヤを分けて作るのが管理しやすいのでは、と考えた.</p>
+
+<ul>
+<li>baseイメージ
+
+<ul>
+<li>OSの基本パッケージと、構成管理ツールをインストールしたイメージ.</li>
+</ul>
+</li>
+<li>ミドルウェアイメージ
+
+<ul>
+<li>baseイメージを元にビルドする. アプリケーションデプロイの手前までの環境を提供する</li>
+<li>割と複雑になりそうなので、Dockerfile内からAnsible playbookを呼び出すことで実行する</li>
+</ul>
+</li>
+<li>アプリケーションイメージ
+
+<ul>
+<li>ミドルウェアイメージに対して、アプリケーションをデプロイして使える状態にしたイメージ</li>
+</ul>
+</li>
+</ul>
+
+
+<p>新しいアプリケーションをデプロイする際は、最新のミドルウェアイメージを利用して新しいアプリケーションイメージを作成する. もしミドルウェアの設定変更などが発生した場合は、ミドルウェアイメージを再作成し、それを元に再度アプリケーションイメージを作成する.</p>
+
+<p>それぞれのレイヤごとに更新の頻度も違うし、更新を入れる担当も違うのでこのように分けて、それぞれのレイヤでバージョンを管理していくのが良さそう.</p>
+
+<h3>既存の構成管理ツールとの連携</h3>
+
+<p>Ansible playbookの資産があるので、再利用したい. また、Dockerfileは基本コマンドを羅列するだけなので、ある程度複雑になってくると辛い. Dockerfileだけで環境を作ることもできるが、メンテナンス性や再利用性を考えると構成管理ツールは必要だと思う.</p>
+
+<p>そこで、DockerfileからAnsible playbookを実行して環境を構築することにする.</p>
+
+<p>通常ansible-playbookはSSH経由で実行するが、そのためにコンテナの中でsshdを上げるのも。。。と思ってたら、SSHを使わなくても実行できるらしい. <a href="http://docs.ansible.com/playbooks_delegation.html#local-playbooks">Local Playbooks</a></p>
+
+<p>playbookをDockerfile内でADDするか、VOLUMEに置くかしてコンテナから見えるようにすれば、コンテナに対するplaybookの適用はできそう.</p>
+
+<h3>ネットワークをどうする？</h3>
+
+<p>普通にコンテナを起動すると、Dockerホスト内のプライベートネットワーク空間に入るので、外部からどう接続するかを考える必要がある.</p>
+
+<p><a href="https://docs.docker.com/articles/networking/#container-networking">ドキュメント</a>によると、ネットワークのオプションもいくつかある.</p>
+
+<ul>
+<li><code>--net=bridge</code>(デフォルト)
+
+<ul>
+<li>Dockerホストが提供する仮想ブリッジに接続される. 外部にポートを公開するにはexposeする必要がある</li>
+</ul>
+</li>
+<li><code>--net=container</code>
+
+<ul>
+<li>起動済みコンテナのネットワークスタックを再利用する. ネットワークスタックを共用しているコンテナ同士は、localhostで通信できる. 外部から繋ぐには、やはりexposeが必要</li>
+</ul>
+</li>
+<li><code>--net=host</code>
+
+<ul>
+<li>ホストのネットワークスタックをそのまま利用する. 普通にホストの中にプロセスが起動しているのと同じ状態になる.</li>
+</ul>
+</li>
+</ul>
+
+
+<p><a href="http://domino.research.ibm.com/library/cyberdig.nsf/papers/0929052195DD819C85257D2300681E7B/$File/rc25482.pdf">IBMの検証結果</a>や、<a href="ISUCON%E3%81%A7Nginx%E3%81%A8MySQL%E3%82%92Docker%E5%8C%96%E3%81%97%E3%81%9F%E3%81%A8%E3%81%8D%E3%81%AE%E3%83%91%E3%83%95%E3%82%A9%E3%83%BC%E3%83%9E%E3%83%B3%E3%82%B9">こちら</a>によると、<code>--net=bridge</code>だとNATのオーバーヘッドにより<code>--net=host</code>に対して20%程度性能が落ちる場合があるらしい.</p>
+
+<p>ただ、<code>--net=host</code>だと同一ホストで複数コンテナ起動する場合にはポートがバッティングしないように何かしら工夫する必要がある. <code>--net=bridge</code>だと<code>docker run</code>するときにオプションでマッピングを変えればいいので、そっちの方が扱いやすいか. これは、とりあえず両方試してみて後で決める.</p>
+
+<p>外部からの接続方法については、<a href="https://github.com/googlecloudplatform/kubernetes">Kubernetes</a>とか、serf+HAProxy/nginxとか、カッコイイ方法はありそうだけど、とりあえずは手で接続元やHAProxy等の設定を変更することにする. 自動化は後.</p>
+
+<h3>起動先の環境に依存する部分をどう吸収するか</h3>
+
+<p>実行環境がコンテナ内に固められている、とは言えやはり環境に依存する部分はあり得る. アプリケーションサーバから接続する先のDBとか、ホストのメモリに応じてコンテナ内のjavaアプリケーションサーバのヒープサイズを変えたいとか、自ホストのIPアドレスが設定ファイルに書かれている場合とか.
+調べてみると、<code>docker run</code>に<code>-e</code>オプションを付けて環境変数を渡すことはできそう. すると、環境変数を元に関連する部分を書き換えた上でアプリケーションサーバを起動するようなラッパースクリプトを作り、Dockerfileの<code>CMD</code>でコンテナ起動時に実行するようにする必要がある.</p>
+
+<p>以下が参考になりそう</p>
+
+<ul>
+<li><a href="http://heartbeats.jp/hbblog/2014/07/3-tips-for-nginx-on-docker.html">nginxをdockerで動かす時のTips 3選</a></li>
+<li><a href="http://java.dzone.com/articles/parameterized-docker">Parameterized Docker Containers</a></li>
+</ul>
+
+
+<h2>他には？</h2>
+
+<p>ログをどうするとか、モニタリングとか、他にも色々考えることはありそうだけど、とりあえずここまで.</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -843,6 +1015,10 @@
     <section>
   <h1>Recent Posts</h1>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/12/10/thinkings-to-start-using-docker1/">Dockerを使い始めるための検討</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2014/09/27/getting-started-with-openshift/">Getting Stated With OpenShiftを読んだ</a>
