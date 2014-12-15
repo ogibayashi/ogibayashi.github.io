@@ -9,7 +9,7 @@
   <meta name="author" content="OGIBAYASHI Hironori">
 
   
-  <meta name="description" content="Fluentd v0.12でin/out_forwardでAt-least-once semanticsがサポートされるようになった. 今まではアプリケーションレイヤでの到達確認がなかったので、一部のネットワーク障害などのケースでは、送信されたように見えて実は送信されていない、 &hellip;">
+  <meta name="description" content="Fluentd v0.12のin/out_forwardでAt-least-once semanticsがサポートされるようになった. 今まではアプリケーションレイヤでの到達確認がなかったので、一部のネットワーク障害などのケースでは、送信されたように見えて実は送信されていない、 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -95,7 +95,7 @@
   </header>
 
 
-  <div class="entry-content"><p>Fluentd v0.12でin/out_forwardでAt-least-once semanticsがサポートされるようになった. 今まではアプリケーションレイヤでの到達確認がなかったので、一部のネットワーク障害などのケースでは、送信されたように見えて実は送信されていない、という事象が発生し得た. v0.12から導入された<code>require_ack_response</code>オプションを使うと、このような事象を避けることができる.</p>
+  <div class="entry-content"><p>Fluentd v0.12のin/out_forwardでAt-least-once semanticsがサポートされるようになった. 今まではアプリケーションレイヤでの到達確認がなかったので、一部のネットワーク障害などのケースでは、送信されたように見えて実は送信されていない、という事象が発生し得た. v0.12から導入された<code>require_ack_response</code>オプションを使うと、このような事象を避けることができる.</p>
 
 <p>この機能が導入されたpull requestはこちら.
 <a href="https://github.com/fluent/fluentd/pull/428">https://github.com/fluent/fluentd/pull/428</a></p>
