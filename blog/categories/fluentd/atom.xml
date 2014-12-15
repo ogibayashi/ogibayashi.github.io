@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Fluentd | Tech Notes]]></title>
   <link href="http://ogibayashi.github.io/blog/categories/fluentd/atom.xml" rel="self"/>
   <link href="http://ogibayashi.github.io/"/>
-  <updated>2014-12-11T00:57:33+09:00</updated>
+  <updated>2014-12-16T01:02:24+09:00</updated>
   <id>http://ogibayashi.github.io/</id>
   <author>
     <name><![CDATA[OGIBAYASHI Hironori]]></name>
@@ -12,6 +12,186 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Fluentd v0.12のAt-least-once Semanticsを試す]]></title>
+    <link href="http://ogibayashi.github.io/blog/2014/12/16/try-fluentd-v0-dot-12-at-least-once/"/>
+    <updated>2014-12-16T00:34:17+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2014/12/16/try-fluentd-v0-dot-12-at-least-once</id>
+    <content type="html"><![CDATA[<p>Fluentd v0.12でin/out_forwardでAt-least-once semanticsがサポートされるようになった. 今まではアプリケーションレイヤでの到達確認がなかったので、一部のネットワーク障害などのケースでは、送信されたように見えて実は送信されていない、という事象が発生し得た. v0.12から導入された<code>require_ack_response</code>オプションを使うと、このような事象を避けることができる.</p>
+
+<p>この機能が導入されたpull requestはこちら.
+<a href="https://github.com/fluent/fluentd/pull/428">https://github.com/fluent/fluentd/pull/428</a></p>
+
+<p>ということで試してみた.</p>
+
+<h2>require_ack_responseがない場合</h2>
+
+<p>fluentd 0.10.56で試す. (0.12で試しても良かったのだけど..)</p>
+
+<p>送信側は以下の設定. 相手先fluentdが早々にdetachされてしまうのを避けるため、<code>hard_timeout</code>と<code>phi_threshold</code>を入れた</p>
+
+<p>```
+<source>
+   type forward
+</source>
+<match test.**>
+   type forward
+   flush_interval 1s
+   heartbeat_type tcp
+   hard_timeout 600
+   phi_threshold 300
+   buffer_type file
+   buffer_path /var/log/fluentd.*.buffer
+   <server></p>
+
+<pre><code> host  192.168.1.2
+ port 24224
+</code></pre>
+
+<p>   </server>
+</match></p>
+
+<p>```</p>
+
+<p>受信側はこんな感じ</p>
+
+<p>```
+<source>
+  type forward
+</source></p>
+
+<p><match test.**>
+  type file
+  path /tmp/fluentd_forward.log
+</match></p>
+
+<p>```</p>
+
+<p>で、パケットが届かないが、アプリケーションにエラーが返らない状況を作るため、受信側のiptablesでSYNが立っていないパケットをドロップするようにする. SYNは相手に到達し、SYN-ACKも返るため、アプリケーションからは正常に接続されている様に見えることになる.</p>
+
+<p>```</p>
+
+<h1>iptables -A INPUT -p tcp &mdash;syn &mdash;dport 24224 -j ACCEPT</h1>
+
+<h1>iptables -A INPUT -p tcp &mdash;dport 24224 -j DROP</h1>
+
+<p>```</p>
+
+<p>これでログを送ってみる</p>
+
+<p>```</p>
+
+<h1>echo &lsquo;{&ldquo;aaa&rdquo;: 1}&rsquo; | fluent-cat  test.data</h1>
+
+<h1>echo &lsquo;{&ldquo;bbb&rdquo;: 2}&rsquo; | fluent-cat test.data</h1>
+
+<p>```</p>
+
+<p>netstatで送信側のソケットを見る. Send-Qにデータが溜まっている.</p>
+
+<p>```</p>
+
+<h1>netstat -na | grep 24224</h1>
+
+<p>tcp        0      0 0.0.0.0:24224               0.0.0.0:<em>                   LISTEN
+tcp        0      1 192.168.1.1:10652          192.168.1.2:24224          FIN_WAIT1
+tcp        0     41 192.168.1.1:10655          192.168.1.2:24224          FIN_WAIT1
+udp        0      0 0.0.0.0:24224               0.0.0.0:</em></p>
+
+<p>```</p>
+
+<p>しばらくすると、ソケットが破棄される.</p>
+
+<p>```</p>
+
+<h1>netstat -na | grep 24224</h1>
+
+<p>tcp        0      0 0.0.0.0:24224               0.0.0.0:<em>                   LISTEN    <br/>
+tcp        0      1 192.168.1.1:10664           192.168.1.2:24224          FIN_WAIT1 <br/>
+udp        0      0 0.0.0.0:24224               0.0.0.0:</em></p>
+
+<p>```</p>
+
+<p>この状況だと、アプリケーション的には正常に送れているように見えてしまうので、バッファは削除される. つまりログがロストした状況.</p>
+
+<p>```</p>
+
+<h1>ls /var/log/fluentd.*.buffer</h1>
+
+<p>ls: cannot access /var/log/fluentd.*.buffer: そのようなファイルやディレクトリはありません</p>
+
+<p>```</p>
+
+<h2>require_ack_responseを使う</h2>
+
+<p>次に、送受信共に<code>v0.12.1</code>にして、送信側に<code>require_ack_response</code>の設定を入れてみる.</p>
+
+<p>```
+  <source></p>
+
+<pre><code>type forward
+</code></pre>
+
+<p>  </source>
+  <match test.**></p>
+
+<pre><code>type forward
+flush_interval 1s
+heartbeat_type tcp
+hard_timeout 600
+phi_threshold 300
+buffer_type file
+buffer_path /var/log/fluentd.*.buffer
+require_ack_response 
+&lt;server&gt;
+  host 192.168.1.2
+  port 24224
+&lt;/server&gt;
+</code></pre>
+
+<p>  </match></p>
+
+<p>```</p>
+
+<p>同様にfluent-catで送る. 今度は、一定時間後に以下のようにエラーになった.</p>
+
+<p><code>``
+2014-12-15 15:25:56 +0900 [warn]: no response from 10.29.254.66:24224. regard it as unavailable.
+2014-12-15 15:26:56 +0900 [warn]: temporarily failed to flush the buffer. next_retry=2014-12-15 15:22:46 +0900 error_class="Fluent::ForwardOutputACKTimeoutError" error="node 10.29.254.66:24224 does not return ACK" plugin_id="object:16c7e3c"
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:321:in</code>send_data'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:169:in <code>block in write_objects'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:163:in</code>times'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:163:in <code>write_objects'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/output.rb:459:in</code>write'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/buffer.rb:325:in <code>write_chunk'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/buffer.rb:304:in</code>pop'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/output.rb:320:in <code>try_flush'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/output.rb:140:in</code>run'</p>
+
+<p>```</p>
+
+<p>バッファも残っている</p>
+
+<p>```</p>
+
+<h1>ls /var/log/fluentd.test.data.*.buffer</h1>
+
+<p>/var/log/fluentd.test.data.b50a3b457dcfed028.buffer  /var/log/fluentd.test.data.q50a3b455b1eac4ca.buffer
+```</p>
+
+<p>しばらく放置した後、iptablesを解除したら無事に送信された.</p>
+
+<h2>まとめ</h2>
+
+<p>Fluentd v0.12で導入されたAt-least-once semanticsを試してみた. アプリケーションレイヤでの到達確認が実装されることで、TCPレイヤでパケットがうまく届いていないケースについても、fluentdがそれを検知して再送してくれることが確認できた.</p>
+
+<p>ちなみに自分のところでは、ruby1.9上でfluentdを動かしていた時にプロセスが短時間ブロックするような事象が多発していて、それに起因してログのロストが発生したことがある. 恐らく、上記のようにTCPのコネクションは確立したように見えて、実は相手側がハング状態だったためにソケットバッファに滞留、最終的にソケットクローズ時にパケットが破棄されたのだと考えている.
+(この時は、td-agent2にしたら解消した)</p>
+
+<p><code>require_ack_response</code>により、そのようなケースでもfluentdがちゃんと検知して再送してくれるので、このオプションは是非入れておきたい.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Fluentdの障害時動作]]></title>

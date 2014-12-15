@@ -1,0 +1,447 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Fluentd v0.12のAt-least-once Semanticsを試す - Tech Notes</title>
+  <meta name="author" content="OGIBAYASHI Hironori">
+
+  
+  <meta name="description" content="Fluentd v0.12でin/out_forwardでAt-least-once semanticsがサポートされるようになった. 今まではアプリケーションレイヤでの到達確認がなかったので、一部のネットワーク障害などのケースでは、送信されたように見えて実は送信されていない、 &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://ogibayashi.github.io/blog/2014/12/16/try-fluentd-v0-dot-12-at-least-once">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="Tech Notes" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">Tech Notes</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:ogibayashi.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Fluentd v0.12のAt-least-once Semanticsを試す</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-12-16T00:34:17+09:00" pubdate data-updated="true">Dec 16<span>th</span>, 2014</time>
+        
+           | <a href="#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>Fluentd v0.12でin/out_forwardでAt-least-once semanticsがサポートされるようになった. 今まではアプリケーションレイヤでの到達確認がなかったので、一部のネットワーク障害などのケースでは、送信されたように見えて実は送信されていない、という事象が発生し得た. v0.12から導入された<code>require_ack_response</code>オプションを使うと、このような事象を避けることができる.</p>
+
+<p>この機能が導入されたpull requestはこちら.
+<a href="https://github.com/fluent/fluentd/pull/428">https://github.com/fluent/fluentd/pull/428</a></p>
+
+<p>ということで試してみた.</p>
+
+<h2>require_ack_responseがない場合</h2>
+
+<p>fluentd 0.10.56で試す. (0.12で試しても良かったのだけど..)</p>
+
+<p>送信側は以下の設定. 相手先fluentdが早々にdetachされてしまうのを避けるため、<code>hard_timeout</code>と<code>phi_threshold</code>を入れた</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;source&gt;
+</span><span class='line'>   type forward
+</span><span class='line'>&lt;/source&gt;
+</span><span class='line'>&lt;match test.**&gt;
+</span><span class='line'>   type forward
+</span><span class='line'>   flush_interval 1s
+</span><span class='line'>   heartbeat_type tcp
+</span><span class='line'>   hard_timeout 600
+</span><span class='line'>   phi_threshold 300
+</span><span class='line'>   buffer_type file
+</span><span class='line'>   buffer_path /var/log/fluentd.*.buffer
+</span><span class='line'>   &lt;server&gt;
+</span><span class='line'>     host  192.168.1.2
+</span><span class='line'>     port 24224
+</span><span class='line'>   &lt;/server&gt;
+</span><span class='line'>&lt;/match&gt;
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>受信側はこんな感じ</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;source&gt;
+</span><span class='line'>  type forward
+</span><span class='line'>&lt;/source&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;match test.**&gt;
+</span><span class='line'>  type file
+</span><span class='line'>  path /tmp/fluentd_forward.log
+</span><span class='line'>&lt;/match&gt;
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>で、パケットが届かないが、アプリケーションにエラーが返らない状況を作るため、受信側のiptablesでSYNが立っていないパケットをドロップするようにする. SYNは相手に到達し、SYN-ACKも返るため、アプリケーションからは正常に接続されている様に見えることになる.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># iptables -A INPUT -p tcp --syn --dport 24224 -j ACCEPT
+</span><span class='line'># iptables -A INPUT -p tcp --dport 24224 -j DROP</span></code></pre></td></tr></table></div></figure>
+
+
+<p>これでログを送ってみる</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># echo '{"aaa": 1}' | fluent-cat  test.data
+</span><span class='line'># echo '{"bbb": 2}' | fluent-cat test.data</span></code></pre></td></tr></table></div></figure>
+
+
+<p>netstatで送信側のソケットを見る. Send-Qにデータが溜まっている.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># netstat -na | grep 24224
+</span><span class='line'>tcp        0      0 0.0.0.0:24224               0.0.0.0:*                   LISTEN
+</span><span class='line'>tcp        0      1 192.168.1.1:10652          192.168.1.2:24224          FIN_WAIT1
+</span><span class='line'>tcp        0     41 192.168.1.1:10655          192.168.1.2:24224          FIN_WAIT1
+</span><span class='line'>udp        0      0 0.0.0.0:24224               0.0.0.0:*
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>しばらくすると、ソケットが破棄される.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># netstat -na | grep 24224
+</span><span class='line'>tcp        0      0 0.0.0.0:24224               0.0.0.0:*                   LISTEN      
+</span><span class='line'>tcp        0      1 192.168.1.1:10664           192.168.1.2:24224          FIN_WAIT1   
+</span><span class='line'>udp        0      0 0.0.0.0:24224               0.0.0.0:*             
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>この状況だと、アプリケーション的には正常に送れているように見えてしまうので、バッファは削除される. つまりログがロストした状況.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># ls /var/log/fluentd.*.buffer
+</span><span class='line'>ls: cannot access /var/log/fluentd.*.buffer: そのようなファイルやディレクトリはありません
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>require_ack_responseを使う</h2>
+
+<p>次に、送受信共に<code>v0.12.1</code>にして、送信側に<code>require_ack_response</code>の設定を入れてみる.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  &lt;source&gt;
+</span><span class='line'>    type forward
+</span><span class='line'>  &lt;/source&gt;
+</span><span class='line'>  &lt;match test.**&gt;
+</span><span class='line'>    type forward
+</span><span class='line'>    flush_interval 1s
+</span><span class='line'>    heartbeat_type tcp
+</span><span class='line'>    hard_timeout 600
+</span><span class='line'>    phi_threshold 300
+</span><span class='line'>    buffer_type file
+</span><span class='line'>    buffer_path /var/log/fluentd.*.buffer
+</span><span class='line'>    require_ack_response 
+</span><span class='line'>    &lt;server&gt;
+</span><span class='line'>      host 192.168.1.2
+</span><span class='line'>      port 24224
+</span><span class='line'>    &lt;/server&gt;
+</span><span class='line'>  &lt;/match&gt;
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>同様にfluent-catで送る. 今度は、一定時間後に以下のようにエラーになった.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2014-12-15 15:25:56 +0900 [warn]: no response from 10.29.254.66:24224. regard it as unavailable.
+</span><span class='line'>2014-12-15 15:26:56 +0900 [warn]: temporarily failed to flush the buffer. next_retry=2014-12-15 15:22:46 +0900 error_class="Fluent::ForwardOutputACKTimeoutError" error="node 10.29.254.66:24224 does not return ACK" plugin_id="object:16c7e3c"
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:321:in `send_data'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:169:in `block in write_objects'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:163:in `times'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:163:in `write_objects'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/output.rb:459:in `write'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/buffer.rb:325:in `write_chunk'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/buffer.rb:304:in `pop'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/output.rb:320:in `try_flush'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/output.rb:140:in `run'
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>バッファも残っている</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># ls /var/log/fluentd.test.data.*.buffer
+</span><span class='line'>/var/log/fluentd.test.data.b50a3b457dcfed028.buffer  /var/log/fluentd.test.data.q50a3b455b1eac4ca.buffer</span></code></pre></td></tr></table></div></figure>
+
+
+<p>しばらく放置した後、iptablesを解除したら無事に送信された.</p>
+
+<h2>まとめ</h2>
+
+<p>Fluentd v0.12で導入されたAt-least-once semanticsを試してみた. アプリケーションレイヤでの到達確認が実装されることで、TCPレイヤでパケットがうまく届いていないケースについても、fluentdがそれを検知して再送してくれることが確認できた.</p>
+
+<p>ちなみに自分のところでは、ruby1.9上でfluentdを動かしていた時にプロセスが短時間ブロックするような事象が多発していて、それに起因してログのロストが発生したことがある. 恐らく、上記のようにTCPのコネクションは確立したように見えて、実は相手側がハング状態だったためにソケットバッファに滞留、最終的にソケットクローズ時にパケットが破棄されたのだと考えている.
+(この時は、td-agent2にしたら解消した)</p>
+
+<p><code>require_ack_response</code>により、そのようなケースでもfluentdがちゃんと検知して再送してくれるので、このオプションは是非入れておきたい.</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">OGIBAYASHI Hironori</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-12-16T00:34:17+09:00" pubdate data-updated="true">Dec 16<span>th</span>, 2014</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/fluentd/'>fluentd</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://ogibayashi.github.io/blog/2014/12/16/try-fluentd-v0-dot-12-at-least-once/" data-via="" data-counturl="http://ogibayashi.github.io/blog/2014/12/16/try-fluentd-v0-dot-12-at-least-once/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2014/12/10/thinkings-to-start-using-docker1/" title="Previous Post: Dockerを使い始めるための検討">&laquo; Dockerを使い始めるための検討</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+  <section>
+    <h1>Comments</h1>
+    <div id="disqus_thread" aria-live="polite"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+</div>
+  </section>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2014/12/16/try-fluentd-v0-dot-12-at-least-once/">Fluentd v0.12のAt-least-once Semanticsを試す</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/12/10/thinkings-to-start-using-docker1/">Dockerを使い始めるための検討</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/09/27/getting-started-with-openshift/">Getting Stated With OpenShiftを読んだ</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/09/17/elasticsearch-study-6th/">第6回Elasticsearch勉強会</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2014/06/04/how-fluentd-works-in-case-of-failures/">Fluentdの障害時動作</a>
+      </li>
+    
+  </ul>
+</section>
+
+
+
+
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2014 - OGIBAYASHI Hironori -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+<script type="text/javascript">
+      var disqus_shortname = 'technotes-ogibayashi';
+      
+        
+        // var disqus_developer = 1;
+        var disqus_identifier = 'http://ogibayashi.github.io/blog/2014/12/16/try-fluentd-v0-dot-12-at-least-once/';
+        var disqus_url = 'http://ogibayashi.github.io/blog/2014/12/16/try-fluentd-v0-dot-12-at-least-once/';
+        var disqus_script = 'embed.js';
+      
+    (function () {
+      var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+      dsq.src = '//' + disqus_shortname + '.disqus.com/' + disqus_script;
+      (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    }());
+</script>
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
