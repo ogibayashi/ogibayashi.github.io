@@ -592,7 +592,7 @@
 
 <p>このクラスはtez-apiのjarに含まれているが、HiveServer2のサーバにTezクライアントをセットアップしていなかったのが原因だった. セットアップして解消.</p>
 
-<h3>(未解決)Tez OrderedWordCountの実行エラー</h3>
+<h3>Tez OrderedWordCountの実行エラー</h3>
 
 <p>Tezの動作確認として、tez-examplesに含まれる、OrderedWordCountを実行した際のエラー.</p>
 
@@ -740,9 +740,21 @@
 
 <p>このクラスは、hadoop-common.jarに入っており、<code>yarn classpath</code>で確認するとこのjarもCLASSPATHに含まれているのだが、、、</p>
 
+<p>(1/9追記)どうやら、<code>tez.lib.uris</code>の問題だった模様.以下のように、HDFSに乗せた<code>tez.tar.gz</code>のパスを指定したらうまく動作した.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;property&gt;
+</span><span class='line'>  &lt;name&gt;tez.lib.uris&lt;/name&gt;
+</span><span class='line'>  &lt;value&gt;/hdp/apps/current/tez/tez.tar.gz&lt;/value&gt;
+</span><span class='line'>&lt;/property&gt;</span></code></pre></td></tr></table></div></figure>
+
+
 <h2>まとめ</h2>
 
-<p>ということで、HDP2.2のクラスタを作ろうとして色々うまくいかなかったのでまとめてみた. あとはTezのエラーを解消したいなぁ. あと、マニュアルをブラウザで見るととても見づらいので、PDFをダウンロードして手元で見た方が良い.</p>
+<p>ということで、HDP2.2のクラスタを作ろうとして色々うまくいかなかったのでまとめてみた. <del>あとはTezのエラーを解消したいなぁ.</del> あと、マニュアルをブラウザで見るととても見づらいので、PDFをダウンロードして手元で見た方が良い.</p>
 </div>
 
 

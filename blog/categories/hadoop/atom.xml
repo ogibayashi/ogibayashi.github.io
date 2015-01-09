@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Hadoop | Tech Notes]]></title>
   <link href="http://ogibayashi.github.io/blog/categories/hadoop/atom.xml" rel="self"/>
   <link href="http://ogibayashi.github.io/"/>
-  <updated>2015-01-07T14:53:04+09:00</updated>
+  <updated>2015-01-09T13:06:09+09:00</updated>
   <id>http://ogibayashi.github.io/</id>
   <author>
     <name><![CDATA[OGIBAYASHI Hironori]]></name>
@@ -396,7 +396,7 @@ java.lang.NoClassDefFoundError: org/apache/tez/dag/api/SessionNotRunning</p>
 
 <p>このクラスはtez-apiのjarに含まれているが、HiveServer2のサーバにTezクライアントをセットアップしていなかったのが原因だった. セットアップして解消.</p>
 
-<h3>(未解決)Tez OrderedWordCountの実行エラー</h3>
+<h3>Tez OrderedWordCountの実行エラー</h3>
 
 <p>Tezの動作確認として、tez-examplesに含まれる、OrderedWordCountを実行した際のエラー.</p>
 
@@ -487,9 +487,21 @@ Exception in thread &ldquo;main&rdquo; java.lang.NoClassDefFoundError: org/apach
 
 <p>このクラスは、hadoop-common.jarに入っており、<code>yarn classpath</code>で確認するとこのjarもCLASSPATHに含まれているのだが、、、</p>
 
+<p>(1/9追記)どうやら、<code>tez.lib.uris</code>の問題だった模様.以下のように、HDFSに乗せた<code>tez.tar.gz</code>のパスを指定したらうまく動作した.</p>
+
+<p>```</p>
+
+<pre><code>&lt;property&gt;
+  &lt;name&gt;tez.lib.uris&lt;/name&gt;
+  &lt;value&gt;/hdp/apps/current/tez/tez.tar.gz&lt;/value&gt;
+&lt;/property&gt;
+</code></pre>
+
+<p>```</p>
+
 <h2>まとめ</h2>
 
-<p>ということで、HDP2.2のクラスタを作ろうとして色々うまくいかなかったのでまとめてみた. あとはTezのエラーを解消したいなぁ. あと、マニュアルをブラウザで見るととても見づらいので、PDFをダウンロードして手元で見た方が良い.</p>
+<p>ということで、HDP2.2のクラスタを作ろうとして色々うまくいかなかったのでまとめてみた. <del>あとはTezのエラーを解消したいなぁ.</del> あと、マニュアルをブラウザで見るととても見づらいので、PDFをダウンロードして手元で見た方が良い.</p>
 ]]></content>
   </entry>
   
