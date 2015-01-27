@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Hadoop | Tech Notes]]></title>
   <link href="http://ogibayashi.github.io/blog/categories/hadoop/atom.xml" rel="self"/>
   <link href="http://ogibayashi.github.io/"/>
-  <updated>2015-01-09T13:06:09+09:00</updated>
+  <updated>2015-01-27T18:58:26+09:00</updated>
   <id>http://ogibayashi.github.io/</id>
   <author>
     <name><![CDATA[OGIBAYASHI Hironori]]></name>
@@ -12,6 +12,94 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[HDP2.2でResourceManagerが両系standbyになった事象]]></title>
+    <link href="http://ogibayashi.github.io/blog/2015/01/27/hdp2-dot-2-resoruce-manager-could-not-transition-to-active/"/>
+    <updated>2015-01-27T17:45:06+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2015/01/27/hdp2-dot-2-resoruce-manager-could-not-transition-to-active</id>
+    <content type="html"><![CDATA[<p>HDP2.2で、daemonやクラスタの再起動を繰り返していた所、ResourceManagerが両系standbyになってしまった.</p>
+
+<p>ResourceManagerのログには以下のように出力されている.</p>
+
+<p>```
+2015-01-16 16:29:19,495 WARN  resourcemanager.RMAuditLogger
+(RMAuditLogger.java:logFailure(285)) &ndash; USER=yarn
+OPERATION=transitionToActive    TARGET=RMHAProtocolService
+RESULT=FAILURE  DESCRIPTION=Exception transitioning to active
+PERMISSIONS=All users are allowed
+2015-01-16 16:29:19,495 WARN  ha.ActiveStandbyElector
+(ActiveStandbyElector.java:becomeActive(809)) &ndash; Exception handling the
+winning of election
+org.apache.hadoop.ha.ServiceFailedException: RM could not transition to Active</p>
+
+<pre><code>    at org.apache.hadoop.yarn.server.resourcemanager.EmbeddedElectorService.becomeActive(EmbeddedElectorService.java:128)
+    at org.apache.hadoop.ha.ActiveStandbyElector.becomeActive(ActiveStandbyElector.java:805)
+    at org.apache.hadoop.ha.ActiveStandbyElector.processResult(ActiveStandbyElector.java:416)
+    at org.apache.zookeeper.ClientCnxn$EventThread.processEvent(ClientCnxn.java:599)
+    at org.apache.zookeeper.ClientCnxn$EventThread.run(ClientCnxn.java:498)
+</code></pre>
+
+<p>Caused by: org.apache.hadoop.ha.ServiceFailedException: Error when
+transitioning to Active mode</p>
+
+<pre><code>    at org.apache.hadoop.yarn.server.resourcemanager.AdminService.transitionToActive(AdminService.java:304)
+    at org.apache.hadoop.yarn.server.resourcemanager.EmbeddedElectorService.becomeActive(EmbeddedElectorService.java:126)
+    ... 4 more
+</code></pre>
+
+<p>Caused by: org.apache.hadoop.service.ServiceStateException:
+org.apache.hadoop.yarn.exceptions.YarnException: Application with id
+application_1421115867116_0001 is already present! Cannot add a
+duplicate!</p>
+
+<pre><code>    at org.apache.hadoop.service.ServiceStateException.convert(ServiceStateException.java:59)
+    at org.apache.hadoop.service.AbstractService.start(AbstractService.java:204)
+    at org.apache.hadoop.yarn.server.resourcemanager.ResourceManager.startActiveServices(ResourceManager.java:1014)
+    at org.apache.hadoop.yarn.server.resourcemanager.ResourceManager$1.run(ResourceManager.java:1051)
+    at org.apache.hadoop.yarn.server.resourcemanager.ResourceManager$1.run(ResourceManager.java:1047)
+    at java.security.AccessController.doPrivileged(Native Method)
+    at javax.security.auth.Subject.doAs(Subject.java:415)
+    at org.apache.hadoop.security.UserGroupInformation.doAs(UserGroupInformation.java:1628)
+    at org.apache.hadoop.yarn.server.resourcemanager.ResourceManager.transitionToActive(ResourceManager.java:1047)
+    at org.apache.hadoop.yarn.server.resourcemanager.AdminService.transitionToActive(AdminService.java:295)
+    ... 5 more
+</code></pre>
+
+<p>Caused by: org.apache.hadoop.yarn.exceptions.YarnException:
+Application with id application_1421115867116_0001 is already present!
+Cannot add a duplicate!</p>
+
+<pre><code>    at org.apache.hadoop.yarn.ipc.RPCUtil.getRemoteException(RPCUtil.java:45)
+    at org.apache.hadoop.yarn.server.resourcemanager.RMAppManager.createAndPopulateNewRMApp(RMAppManager.java:338)
+    at org.apache.hadoop.yarn.server.resourcemanager.RMAppManager.recoverApplication(RMAppManager.java:309)
+    at org.apache.hadoop.yarn.server.resourcemanager.RMAppManager.recover(RMAppManager.java:413)
+    at org.apache.hadoop.yarn.server.resourcemanager.ResourceManager.recover(ResourceManager.java:1207)
+    at org.apache.hadoop.yarn.server.resourcemanager.ResourceManager$RMActiveServices.serviceStart(ResourceManager.java:590)
+    at org.apache.hadoop.service.AbstractService.start(AbstractService.java:193)
+</code></pre>
+
+<p>```</p>
+
+<p>Zookeeperに変なエントリが残ってる？と思われたのでRMを停止した上で<code>/rmstore/ZKRMStateRoot/RMAppRoot/</code>以下のApplicatoinIDのエントリを全て削除.</p>
+
+<p>```
+[zk: localhost:2181(CONNECTED) 2] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421387925857_0002
+[zk: localhost:2181(CONNECTED) 3] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421115867116_0002
+[zk: localhost:2181(CONNECTED) 4] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421115867116_0003
+[zk: localhost:2181(CONNECTED) 5] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421115867116_0004
+[zk: localhost:2181(CONNECTED) 6] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421320519530_0002
+[zk: localhost:2181(CONNECTED) 7] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421115867116_0005
+[zk: localhost:2181(CONNECTED) 8] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421320519530_0001
+[zk: localhost:2181(CONNECTED) 11] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421387925857_0001</p>
+
+<p>```</p>
+
+<p>で、RMを起動したら復旧した.</p>
+
+<p>どうやら<a href="https://issues.apache.org/jira/browse/YARN-2865">YARN-2865</a>の事象っぽい. Hadoop 2.7.0でFIX. ZK上のエントリを消してしまったので、その分のジョブについてはクライアントから再投入する必要がある.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[HDP2.2をセットアップするためにハマった箇所のメモ]]></title>
