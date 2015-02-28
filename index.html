@@ -9,24 +9,7 @@
   <meta name="author" content="OGIBAYASHI Hironori">
 
   
-  <meta name="description" content="HDP2.2で、daemonやクラスタの再起動を繰り返していた所、ResourceManagerが両系standbyになってしまった. ResourceManagerのログには以下のように出力されている. 1
-2
-3
-4
-5
-6
-7
-8
-9
-10
-11
-12
-13
-14
-15
-16
-17
-18 &hellip;">
+  <meta name="description" content="Fluentdに対して、in_httpのインタフェースで送信してくるアプリケーションがあるのだけど、そのアプリケーションに対してリリースがあった後、一部のメッセージがうまく送れないという話があった. 見てみたら、受信側Fluentdに以下のようなメッセージが多発していた. &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -80,6 +63,113 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/02/28/incompatible-character-encodings-in-fluentd/">Fluentdで Incompatible Character Encodingのエラーが出た話</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2015-02-28T22:24:31+09:00" pubdate data-updated="true">Feb 28<span>th</span>, 2015</time>
+        
+           | <a href="/blog/2015/02/28/incompatible-character-encodings-in-fluentd/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2015/02/28/incompatible-character-encodings-in-fluentd/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>Fluentdに対して、in_httpのインタフェースで送信してくるアプリケーションがあるのだけど、そのアプリケーションに対してリリースがあった後、一部のメッセージがうまく送れないという話があった. 見てみたら、受信側Fluentdに以下のようなメッセージが多発していた. fluentdのバージョンは0.10.48.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2015-02-06 14:14:52 +0900 [warn]: fluent/engine.rb:156:rescue in emit_stream: em
+</span><span class='line'>it transaction failed  error_class=Encoding::CompatibilityError error=#&lt;Encoding
+</span><span class='line'>::CompatibilityError: incompatible character encodings: ASCII-8BIT and UTF-8&gt;
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:32:in
+</span><span class='line'>`&lt;&lt;'
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:32:in
+</span><span class='line'>`to_msgpack'
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:32:in
+</span><span class='line'>`block in to_msgpack_stream'
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:54:in
+</span><span class='line'>`call'
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:54:in
+</span><span class='line'>`each'
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:31:in
+</span><span class='line'>`to_msgpack_stream'
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/output.rb:424:i
+</span><span class='line'>n `emit'
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/output.rb:33:in
+</span><span class='line'> `next'
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>全てのメッセージが送れてないわけではない模様. 適当なメッセージをcurlで送ってみても問題ないので
+なんだろう、、、と思っていたら、以下のpull requestを見つけた. 偶然、事象が発生したのと同日.</p>
+
+<p><a href="https://github.com/fluent/fluentd/pull/550">https://github.com/fluent/fluentd/pull/550</a></p>
+
+<p>Messagepackの不具合?で、5KBを超える、且つエンコードがASCII-8BIT以外の文字列をシリアライズ使用とした時に、このエラーが出ることがあるそうな. msgpack 0.5.11で修正.</p>
+
+<p>アプリケーションの人に聞いてみると、確かにメッセージサイズは大幅に増えているようだし、エラー発生時のパケットを見ても、メッセージサイズが数百KBととても大きい. このpull requestは v0.10.60で取り込まれているようなので、td-agentを2.1.4に上げてテストをしてみたら発生しなくなった.</p>
+
+<p>もっと前にこれが発生してたら困ってただろうな. ちょうど修正されてて助かりました.</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -2138,6 +2228,10 @@
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/02/28/incompatible-character-encodings-in-fluentd/">Fluentdで Incompatible Character Encodingのエラーが出た話</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/01/27/hdp2-dot-2-resoruce-manager-could-not-transition-to-active/">HDP2.2でResourceManagerが両系standbyになった事象</a>
       </li>
     
@@ -2153,15 +2247,11 @@
         <a href="/blog/2014/12/10/thinkings-to-start-using-docker1/">Dockerを使い始めるための検討</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2014/09/27/getting-started-with-openshift/">Getting Stated With OpenShiftを読んだ</a>
-      </li>
-    
   </ul>
 </section>
 <section>
   <h1>Categories</h1>
-    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/fluentd'>fluentd (2)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (2)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li></ul>
+    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/fluentd'>fluentd (3)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (2)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li></ul>
 </section>
 
   
