@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Fluentd | Tech Notes]]></title>
   <link href="http://ogibayashi.github.io/blog/categories/fluentd/atom.xml" rel="self"/>
   <link href="http://ogibayashi.github.io/"/>
-  <updated>2015-02-28T22:58:43+09:00</updated>
+  <updated>2015-03-02T10:48:54+09:00</updated>
   <id>http://ogibayashi.github.io/</id>
   <author>
     <name><![CDATA[OGIBAYASHI Hironori]]></name>
@@ -56,7 +56,7 @@ ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/output.rb:33:in
 
 <p><a href="https://github.com/fluent/fluentd/pull/550">https://github.com/fluent/fluentd/pull/550</a></p>
 
-<p>Messagepackの不具合?で、5KBを超える、且つエンコードがASCII-8BIT以外の文字列をシリアライズ使用とした時に、このエラーが出ることがあるそうな. msgpack 0.5.11で修正.</p>
+<p>Messagepackの不具合?で、5KBを超える、且つエンコードがASCII-8BIT以外の文字列をシリアライズしようとした時に、このエラーが出ることがあるそうな. msgpack 0.5.11で修正.</p>
 
 <p>アプリケーションの人に聞いてみると、確かにメッセージサイズは大幅に増えているようだし、エラー発生時のパケットを見ても、メッセージサイズが数百KBととても大きい. このpull requestは v0.10.60で取り込まれているようなので、td-agentを2.1.4に上げてテストをしてみたら発生しなくなった.</p>
 
