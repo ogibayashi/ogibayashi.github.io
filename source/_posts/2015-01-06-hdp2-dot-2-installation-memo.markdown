@@ -1,0 +1,430 @@
+---
+layout: post
+title: HDP2.2をセットアップするためにハマった箇所のメモ
+date: 2015-01-06 20:53:54 +0900
+comments: true
+categories: [Hadoop]
+---
+
+HDP2.2を手元のVMで試しにセットアップしてみたが、色々ハマった部分があったのでメモ
+
+## 環境
+
+CentOS6.3のVMを7つ用意して、以下のようにHA含めて構成することにした.
+
+* master1: NameNode(active), ZKFC, JournalNode, Zookeeper
+* master2: NameNode(standby), ZKFC, JournalNode, ResourceManager(standby), Zookeeper
+* master3: JournalNode, ResourceManager(active), Zookeeper, HiveServer2, MySQL
+* slaves(3ノード): DataNode, NodeManager
+* client: MR/Tez client
+
+ドキュメントは、こちらの"Installing HDP Manually"を使用.
+http://docs.hortonworks.com/HDPDocuments/HDP2/HDP-2.2.0/HDP_Man_Install_v22/index.html
+
+## トラブルシュートなどのメモ
+
+以下、ドキュメントには無いが変更しないといけなかったもの、引っかかったトラブルなど. 単に自分が手順を見落としていたり、間違っていたために発生したものもあるかも.
+
+### 全般
+
+* 基本的に、設定はcompanion filesのものをベースにする. 2.1を動かしていた際の設定もあったが、大分変わっているようなので一旦companion filesのをまるごと持ってきた
+* インストールのベースが`/usr/hdp/2.2.0.0-2041/`になっているが、実際のスクリプトの中では`/usr/lib/hadoop`等を参照しているものもあるため、`/usr/hdp/2.2.0.0-2041/hadoop -> /usr/hdp/2.2.0.0-2041/hadoop` 等のようなシンボリックリンクをひと通り作成した. 
+* Daemonの起動スクリプト類は`hadoop-hdfs-namenode`等のような別RPMになっている.これらのインストール先は`/usr/hdp/2.2.0.0-2041/etc/`となっているため、`/etc/init.d`の下などに、こちらもシンボリックリンクを作成した. ちなみに、`/etc/default`の下に置くファイルも用意されているが、initスクリプトをみてもこれらを読むようには見えない.
+* マニュアルにはcompanion filesに含まれる、 `usersAndGroups.sh`, `directories.sh` を設定した上で `~/.bash_profile`でこれらのファイルを読む設定を入れるようにあるが、daemonの動作がbash_profileに依存するのが気持ち悪かったので、それはやってない. それに起因したトラブルもあるかも.
+
+
+### Zookeeperのセットアップ
+
+* initスクリプト内で呼ばれる、`zookeeper-server`,`zookeeper-server-initialize`は`/usr/hdp/2.2.0.0-2041/zookeeper/bin/`にあるので、これらを`/usr/bin`下に置くよう、シンボリックリンクを作成した
+
+### service <hadoop daemon> start の戻り値が3
+
+また、停止に失敗したりする.
+
+以下の様な感じ.
+
+```
+# service hadoop-yarn-resourcemanager start
+Starting Hadoop resourcemanager:                           [  OK  ]
+starting resourcemanager, logging to /var/log/hadoop/yarn/yarn-yarn-resourcemanager-hdp15.hadoop.local.out
+[root@hdp15 init.d]# echo $?
+3
+```
+
+initスクリプト内で以下のようにPIDFILEを設定しているが、環境変数が正しく設定されていないと、PIDFILEがうまく作られずにこのような状態になる.
+
+```
+PIDFILE="$HADOOP_PID_DIR/yarn-$YARN_IDENT_STRING-resourcemanager.pid"
+```
+
+`yarn-env.sh`で`HADOOP_PID_DIR`, `YARN_IDENT_STRING`, `hadoop-env.sh`でも`HADOOP_PID_DIR`を設定するようにした.
+
+### HistoryServerでPermission Deninedが発生
+
+以下の様なエラーが発生. (何をしようとして発生したのか忘れた...)
+
+```
+2014-12-27 03:15:05,824 ERROR hs.HistoryFileManager (HistoryFileManager.java:scanIfNeeded(285)) - Error while trying to scan the directory hdfs://hdpexperiment:
+8020/mr-history/tmp/client
+org.apache.hadoop.security.AccessControlException: Permission denied: user=mapred, access=READ_EXECUTE, inode="/mr-history/tmp/client":client:hdfs:drwxrwx---
+        at org.apache.hadoop.hdfs.server.namenode.FSPermissionChecker.checkFsPermission(FSPermissionChecker.java:271)
+        at org.apache.hadoop.hdfs.server.namenode.FSPermissionChecker.check(FSPermissionChecker.java:257)
+        at org.apache.hadoop.hdfs.server.namenode.FSPermissionChecker.checkPermission(FSPermissionChecker.java:185)
+```
+
+HDFSのパーミッションを見ると以下のようになっており、`/mr-history/tmp/client`に対して`mapred`ユーザのパーミッションが無い.
+
+```
+# sudo -u hdfs hdfs dfs -ls /
+Found 6 items
+drwxrwxrwt   - yarn   yarn            0 2014-12-27 03:11 /app-logs
+drwxr-xr-x   - hdfs   hdfs            0 2014-12-27 02:43 /apps
+drwxr-xr-x   - hdfs   hadoop          0 2014-12-26 16:17 /hdp
+drwxr-xr-x   - mapred hdfs            0 2014-12-26 16:16 /mr-history
+drwxrwxrwt   - hdfs   hdfs            0 2014-12-27 03:11 /tmp
+drwxr-xr-x   - hdfs   hdfs            0 2014-12-27 02:33 /user
+# sudo -u hdfs hdfs dfs -ls /mr-history
+Found 2 items
+drwxrwxrwt   - mapred hdfs          0 2014-12-26 16:16 /mr-history/done
+drwxrwxrwt   - mapred hdfs          0 2014-12-26 23:27 /mr-history/tmp
+# sudo -u hdfs hdfs dfs -ls /mr-history/tmp
+Found 1 items
+drwxrwx---   - client hdfs          0 2014-12-27 00:14 /mr-history/tmp/client
+
+```
+
+以下のように、`/mr-history`以下のgroupを`mapredと`することで対応.
+
+```
+# sudo -u hdfs hdfs dfs -chgrp -R mapred /mr-history
+```
+
+### MapReduceジョブ実行中のエラー. Slaveにつながらない
+
+exampleのpiを実行した際のエラー
+
+```
+14/12/30 11:17:59 INFO ipc.Client: Retrying connect to server: hdp18.hadoop.local/10.29.254.69:39110. Already tried 0 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+14/12/30 11:18:00 INFO ipc.Client: Retrying connect to server: hdp18.hadoop.local/10.29.254.69:39110. Already tried 1 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+14/12/30 11:18:01 INFO ipc.Client: Retrying connect to server: hdp18.hadoop.local/10.29.254.69:39110. Already tried 2 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+14/12/30 11:18:29 INFO ipc.Client: Retrying connect to server: hdp17.hadoop.local/10.29.254.67:43296. Already tried 0 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+14/12/30 11:18:30 INFO ipc.Client: Retrying connect to server: hdp17.hadoop.local/10.29.254.67:43296. Already tried 1 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+14/12/30 11:18:31 INFO ipc.Client: Retrying connect to server: hdp17.hadoop.local/10.29.254.67:43296. Already tried 2 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+14/12/30 11:18:31 INFO mapreduce.Job: Job job_1419895534181_0002 failed with state FAILED due to: Application application_1419895534181_0002 failed 2 times due to AM Container for appattempt_1419895534181_0002_000002 exited with  exitCode: 255
+For more detailed output, check application tracking page:http://hdp16.hadoop.local:8088/proxy/application_1419895534181_0002/Then, click on links to logs of each attempt.
+Diagnostics: Exception from container-launch.
+Container id: container_1419895534181_0002_02_000001
+Exit code: 255
+Stack trace: ExitCodeException exitCode=255: 
+        at org.apache.hadoop.util.Shell.runCommand(Shell.java:538)
+        at org.apache.hadoop.util.Shell.run(Shell.java:455)
+        at org.apache.hadoop.util.Shell$ShellCommandExecutor.execute(Shell.java:715)
+        at org.apache.hadoop.yarn.server.nodemanager.DefaultContainerExecutor.launchContainer(DefaultContainerExecutor.java:211)
+        at org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainerLaunch.call(ContainerLaunch.java:302)
+        at org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainerLaunch.call(ContainerLaunch.java:82)
+        at java.util.concurrent.FutureTask.run(FutureTask.java:262)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+        at java.lang.Thread.run(Thread.java:745)
+
+
+Container exited with a non-zero exit code 255
+Failing this attempt. Failing the application.
+14/12/30 11:18:31 INFO mapreduce.Job: Counters: 0
+Job Finished in 99.802 seconds
+java.io.FileNotFoundException: File does not exist: hdfs://hdpexperiment/user/hdfs/QuasiMonteCarlo_1419905807487_296085847/out/reduce-out
+        at org.apache.hadoop.hdfs.DistributedFileSystem$18.doCall(DistributedFileSystem.java:1122)
+        at org.apache.hadoop.hdfs.DistributedFileSystem$18.doCall(DistributedFileSystem.java:1114)
+        at org.apache.hadoop.fs.FileSystemLinkResolver.resolve(FileSystemLinkResolver.java:81)
+        at org.apache.hadoop.hdfs.DistributedFileSystem.getFileStatus(DistributedFileSystem.java:1114)
+        at org.apache.hadoop.io.SequenceFile$Reader.<init>(SequenceFile.java:1750)
+        at org.apache.hadoop.io.SequenceFile$Reader.<init>(SequenceFile.java:1774)
+        at org.apache.hadoop.examples.QuasiMonteCarlo.estimatePi(QuasiMonteCarlo.java:314)
+        at org.apache.hadoop.examples.QuasiMonteCarlo.run(QuasiMonteCarlo.java:354)
+        at org.apache.hadoop.util.ToolRunner.run(ToolRunner.java:70)
+        at org.apache.hadoop.examples.QuasiMonteCarlo.main(QuasiMonteCarlo.java:363)
+        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+        at java.lang.reflect.Method.invoke(Method.java:606)
+        at org.apache.hadoop.util.ProgramDriver$ProgramDescription.invoke(ProgramDriver.java:71)
+        at org.apache.hadoop.util.ProgramDriver.run(ProgramDriver.java:144)
+        at org.apache.hadoop.examples.ExampleDriver.main(ExampleDriver.java:74)
+        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+        at java.lang.reflect.Method.invoke(Method.java:606)
+        at org.apache.hadoop.util.RunJar.run(RunJar.java:221)
+        at org.apache.hadoop.util.RunJar.main(RunJar.java:136)
+
+
+```
+
+`yarn logs`ではログが見えなかったので、実行中のサーバでコンテナのログを見てみた. `${hdp.version}`というのがそのままになっている.
+
+```
+2014-12-30 13:08:49,568 FATAL [AsyncDispatcher event handler] org.apache.hadoop.yarn.event.AsyncDispatcher: Error in dispatcher thread
+java.lang.IllegalArgumentException: Unable to parse '/hdp/apps/${hdp.version}/mapreduce/mapreduce.tar.gz#mr-framework' as a URI, check the setting for mapreduce.application.framework.path
+        at org.apache.hadoop.mapreduce.v2.util.MRApps.getMRFrameworkName(MRApps.java:178)
+        at org.apache.hadoop.mapreduce.v2.util.MRApps.setMRFrameworkClasspath(MRApps.java:203)
+        at org.apache.hadoop.mapreduce.v2.util.MRApps.setClasspath(MRApps.java:248)
+        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl.getInitialClasspath(TaskAttemptImpl.java:620)
+        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl.createCommonContainerLaunchContext(TaskAttemptImpl.java:755)
+        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl.createContainerLaunchContext(TaskAttemptImpl.java:812)
+        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl$ContainerAssignedTransition.transition(TaskAttemptImpl.java:1527)
+        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl$ContainerAssignedTransition.transition(TaskAttemptImpl.java:1504)
+        at org.apache.hadoop.yarn.state.StateMachineFactory$SingleInternalArc.doTransition(StateMachineFactory.java:362)
+        at org.apache.hadoop.yarn.state.StateMachineFactory.doTransition(StateMachineFactory.java:302)
+        at org.apache.hadoop.yarn.state.StateMachineFactory.access$300(StateMachineFactory.java:46)
+        at org.apache.hadoop.yarn.state.StateMachineFactory$InternalStateMachine.doTransition(StateMachineFactory.java:448)
+        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl.handle(TaskAttemptImpl.java:1069)
+        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl.handle(TaskAttemptImpl.java:145)
+        at org.apache.hadoop.mapreduce.v2.app.MRAppMaster$TaskAttemptEventDispatcher.handle(MRAppMaster.java:1311)
+        at org.apache.hadoop.mapreduce.v2.app.MRAppMaster$TaskAttemptEventDispatcher.handle(MRAppMaster.java:1303)
+        at org.apache.hadoop.yarn.event.AsyncDispatcher.dispatch(AsyncDispatcher.java:173)
+        at org.apache.hadoop.yarn.event.AsyncDispatcher$1.run(AsyncDispatcher.java:106)
+        at java.lang.Thread.run(Thread.java:745)
+Caused by: java.net.URISyntaxException: Illegal character in path at index 11: /hdp/apps/${hdp.version}/mapreduce/mapreduce.tar.gz#mr-framework
+        at java.net.URI$Parser.fail(URI.java:2829)
+        at java.net.URI$Parser.checkChars(URI.java:3002)
+        at java.net.URI$Parser.parseHierarchical(URI.java:3086)
+        at java.net.URI$Parser.parse(URI.java:3044)
+        at java.net.URI.<init>(URI.java:595)
+        at org.apache.hadoop.mapreduce.v2.util.MRApps.getMRFrameworkName(MRApps.java:176)
+        ... 18 more
+
+```
+
+`mapred-site.xml`で、`${hdp.version}`となっている部分を実際のバージョン番号(`2.2.0.0-2041`)に変えたら解消した.
+
+### Journalnodeの停止に失敗
+
+journalnodeを停止すると、`no journalnode to stop`というエラーが発生. ただ、プロセスは停止している.
+
+```
+# service hadoop-hdfs-journalnode stop
+Stopping Hadoop journalnode:                               [  OK  ]
+no journalnode to stop
+rm: cannot remove `/var/run/hadoop/hadoop-hdfs-journalnode.pid': Permission denied
+# ls -l /var/run/hadoop/hadoop-hdfs-journalnode.pid
+-rw-r--r-- 1 hdfs hdfs 6 12月 30 08:24 2014 /var/run/hadoop/hadoop-hdfs-journalnode.pid
+# ps -ef | grep -i journal
+root       374     2  0 Dec29 ?        00:00:02 [kjournald]
+root       811     2  0 Dec29 ?        00:00:00 [kjournald]
+root     14406 14342  0 14:15 pts/0    00:00:00 grep -i journal
+```
+
+ディレクトリのowner/groupが`mapred`になっている.
+
+```
+# ls -ld /var/run/hadoop
+drwxr-xr-x 5 mapred mapred 4096 12月 30 14:16 2014 /var/run/hadoop
+```
+
+これを`hdfs.hdfs`にしたら事象は解消したが、HistoryServerをrestartしたら`/var/run/hadoop`のownerが`mapred.mapred`に戻ってしまった.
+
+`hadoop-mapreduce-historyserver`のinitスクリプトにある、以下の部分のせい. つまり、historyserverとHDFS系のdaemonが同居している場合に発生する問題.
+
+```
+install -d -m 0755 -o mapred -g mapred $HADOOP_PID_DIR 1>/dev/null 2>&1 || :
+[ -d "$LOCKDIR" ] || install -d -m 0755 $LOCKDIR 1>/dev/null 2>&1 || :
+
+```
+
+`hadoop-env.sh`に以下の記述を入れ、HistoryServerの`HADOOP_PID_DIR`をHDFS系と分けることで対応することにした.
+
+```
+# For HistoryServer
+if [ "${SVC_USER}" = "mapred" ]; then
+  HADOOP_PID_DIR=/var/run/hadoop-mapreduce
+fi
+
+```
+
+### Hive CREATE TABLE時のNo privilege
+
+beelineからhiveユーザで接続し、create tableを発行した際のエラー
+
+```
+0: jdbc:hive2://hdp16.hadoop.local:10000> create table test2(a int, b string); 
+Error: Error while compiling statement: FAILED: SemanticException MetaException(message:No privilege 'Select' found for inputs { database:default}) (state=42000,code=40000)
+```
+
+[Storage Based Authorization in the Metastore Server](https://cwiki.apache.org/confluence/display/Hive/Storage+Based+Authorization+in+the+Metastore+Server)に引っかかっている模様
+
+一旦以下の設定を外して対応
+
+```
+  <property>
+    <name>hive.metastore.pre.event.listeners</name>
+    <value>org.apache.hadoop.hive.ql.security.authorization.AuthorizationPreEventListener</value>
+    <description>List of comma separated listeners for metastore events.</description>
+  </property>
+```
+
+### Hive on MRでのクエリ実行エラー
+
+HiveServer2のログには以下のメッセージが出ている.
+
+```
+2015-01-06 03:14:42,300 ERROR [HiveServer2-Background-Pool: Thread-65]: exec.Task (SessionState.java:printError(833)) - Ended Job = job_1420474977406_0003 with
+exception 'java.lang.NumberFormatException(For input string: "100000L")'
+java.lang.NumberFormatException: For input string: "100000L"
+        at java.lang.NumberFormatException.forInputString(NumberFormatException.java:65)
+        at java.lang.Long.parseLong(Long.java:441)
+        at java.lang.Long.parseLong(Long.java:483)
+        at org.apache.hadoop.conf.Configuration.getLong(Configuration.java:1189)
+        at org.apache.hadoop.hive.conf.HiveConf.getLongVar(HiveConf.java:2253)
+        at org.apache.hadoop.hive.ql.exec.mr.HadoopJobExecHelper.checkFatalErrors(HadoopJobExecHelper.java:209)
+        at org.apache.hadoop.hive.ql.exec.mr.HadoopJobExecHelper.progress(HadoopJobExecHelper.java:308)
+        at org.apache.hadoop.hive.ql.exec.mr.HadoopJobExecHelper.progress(HadoopJobExecHelper.java:547)
+        at org.apache.hadoop.hive.ql.exec.mr.ExecDriver.execute(ExecDriver.java:435)
+        at org.apache.hadoop.hive.ql.exec.mr.MapRedTask.execute(MapRedTask.java:137)
+        at org.apache.hadoop.hive.ql.exec.Task.executeTask(Task.java:160)
+        at org.apache.hadoop.hive.ql.exec.TaskRunner.runSequential(TaskRunner.java:85)
+        at org.apache.hadoop.hive.ql.Driver.launchTask(Driver.java:1604)
+        at org.apache.hadoop.hive.ql.Driver.execute(Driver.java:1364)
+        at org.apache.hadoop.hive.ql.Driver.runInternal(Driver.java:1177)
+        at org.apache.hadoop.hive.ql.Driver.run(Driver.java:1004)
+        at org.apache.hadoop.hive.ql.Driver.run(Driver.java:999)
+        at org.apache.hive.service.cli.operation.SQLOperation.runQuery(SQLOperation.java:144)
+        at org.apache.hive.service.cli.operation.SQLOperation.access$100(SQLOperation.java:69)
+        at org.apache.hive.service.cli.operation.SQLOperation$1$1.run(SQLOperation.java:196)
+        at java.security.AccessController.doPrivileged(Native Method)
+        at javax.security.auth.Subject.doAs(Subject.java:415)
+        at org.apache.hadoop.security.UserGroupInformation.doAs(UserGroupInformation.java:1628)
+        at org.apache.hadoop.hive.shims.HadoopShimsSecure.doAs(HadoopShimsSecure.java:536)
+        at org.apache.hive.service.cli.operation.SQLOperation$1.run(SQLOperation.java:208)
+        at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:471)
+        at java.util.concurrent.FutureTask.run(FutureTask.java:262)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+        at java.lang.Thread.run(Thread.java:745)
+
+```
+
+[AMBARI-8219](https://issues.apache.org/jira/browse/AMBARI-8219)
+の事例に従い、hive-site.xmlの以下を変更したらOK
+
+```
+   <property>
+     <name>hive.exec.max.created.files</name>
+-    <value>100000L</value>
++    <value>100000</value>
+     <description>Maximum number of HDFS files created by all mappers/reducers in a MapReduce job.</description>
+   </property>
+```
+
+### hive.execution.engine=tez でのHiveクエリ実行エラー1
+
+HiveServer2のログは以下の通り
+
+```
+5841 end=1419741946024 duration=183 from=org.apache.hadoop.hive.ql.Driver>
+2014-12-28 13:45:46,025 ERROR [HiveServer2-Handler-Pool: Thread-56]: thrift.ProcessFunction (ProcessFunction.java:process(41)) - Internal error processing ExecuteStatement
+java.lang.NoClassDefFoundError: org/apache/tez/dag/api/SessionNotRunning
+        at java.lang.Class.getDeclaredConstructors0(Native Method)
+        at java.lang.Class.privateGetDeclaredConstructors(Class.java:2585)
+        at java.lang.Class.getConstructor0(Class.java:2885)
+        at java.lang.Class.newInstance(Class.java:350)
+        at org.apache.hadoop.hive.ql.exec.TaskFactory.get(TaskFactory.java:133)
+```
+
+このクラスはtez-apiのjarに含まれているが、HiveServer2のサーバにTezクライアントをセットアップしていなかったのが原因だった. セットアップして解消.
+
+### Tez OrderedWordCountの実行エラー
+
+Tezの動作確認として、tez-examplesに含まれる、OrderedWordCountを実行した際のエラー.
+
+```
+# su - hdfs
+-bash-4.1$ cat /tmp/test.txt 
+foo bar foo bar foo
+$ hadoop fs -put /tmp/test.txt /tmp/test.txt 
+-bash-4.1$ hadoop jar /usr/hdp/2.2.0.0-2041/tez/tez-examples-0.5.2.2.2.0.0-2041.jar orderedwordcount /tmp/test.txt /tmp/out
+Running OrderedWordCount
+14/12/27 02:54:57 INFO client.TezClient: Tez Client Version: [ component=tez-api, version=0.5.2.2.2.0.0-2041, revision=db32ad437885baf17ab90885b4ddb226fbbe3559, SCM-URL=scm:git:https://git-wip-us.apache.org/repos/asf/tez.git, buildTIme=20141119-1512 ]
+14/12/27 02:54:59 INFO client.TezClient: Submitting DAG application with id: application_1419606523103_0010
+14/12/27 02:54:59 INFO Configuration.deprecation: fs.default.name is deprecated. Instead, use fs.defaultFS
+14/12/27 02:54:59 INFO client.TezClientUtils: Using tez.lib.uris value from configuration: hdfs://hdpexperiment/apps/tez/,hdfs://hdpexperiment/apps/tez/lib/,hdfs://hdpexperiment/hdp/apps/current/tez/tez.tar.gz
+14/12/27 02:54:59 WARN client.TezClientUtils: Duplicate resource found, resourceName=tez.tar.gz, existingPath=scheme: "hdfs" host: "hdpexperiment" port: -1 file: "/apps/tez/lib/tez.tar.gz", newPath=hdfs://hdpexperiment/hdp/apps/current/tez/tez.tar.gz
+14/12/27 02:54:59 INFO client.TezClient: Tez system stage directory hdfs://hdpexperiment/tmp/hdfs/staging/.tez/application_1419606523103_0010 doesn't exist and is created
+14/12/27 02:55:00 INFO client.TezClient: Submitting DAG to YARN, applicationId=application_1419606523103_0010, dagName=OrderedWordCount
+14/12/27 02:55:01 INFO impl.YarnClientImpl: Submitted application application_1419606523103_0010
+14/12/27 02:55:01 INFO client.TezClient: The url to track the Tez AM: http://hdp16.hadoop.local:8088/proxy/application_1419606523103_0010/
+14/12/27 02:55:01 INFO client.DAGClientImpl: Waiting for DAG to start running
+14/12/27 02:55:13 INFO client.DAGClientImpl: DAG completed. FinalState=FAILED
+OrderedWordCount failed with diagnostics: [Application application_1419606523103_0010 failed 2 times due to AM Container for appattempt_1419606523103_0010_000002 exited with  exitCode: 1
+For more detailed output, check application tracking page:http://hdp16.hadoop.local:8088/proxy/application_1419606523103_0010/Then, click on links to logs of each attempt.
+Diagnostics: Exception from container-launch.
+Container id: container_1419606523103_0010_02_000001
+Exit code: 1
+Stack trace: ExitCodeException exitCode=1:
+        at org.apache.hadoop.util.Shell.runCommand(Shell.java:538)
+        at org.apache.hadoop.util.Shell.run(Shell.java:455)
+        at org.apache.hadoop.util.Shell$ShellCommandExecutor.execute(Shell.java:715)
+        at org.apache.hadoop.yarn.server.nodemanager.DefaultContainerExecutor.launchContainer(DefaultContainerExecutor.java:211)
+        at org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainerLaunch.call(ContainerLaunch.java:302)
+        at org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainerLaunch.call(ContainerLaunch.java:82)
+        at java.util.concurrent.FutureTask.run(FutureTask.java:262)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+        at java.lang.Thread.run(Thread.java:745)
+
+
+Container exited with a non-zero exit code 1
+Failing this attempt. Failing the application.]
+
+
+```
+
+コンテナのログを見ると以下の通り. クラスが見つからない.
+
+```
+Container: container_1419606523103_0009_01_000001 on hdp17.hadoop.local_45454
+===============================================================================
+LogType:stderr
+Log Upload Time:27-12-2014 03:37:52
+LogLength:1445
+Log Contents:
+Exception in thread "main" java.lang.NoClassDefFoundError: org/apache/hadoop/service/AbstractService
+        at java.lang.ClassLoader.defineClass1(Native Method)
+        at java.lang.ClassLoader.defineClass(ClassLoader.java:800)
+        at java.security.SecureClassLoader.defineClass(SecureClassLoader.java:142)
+        at java.net.URLClassLoader.defineClass(URLClassLoader.java:449)
+        at java.net.URLClassLoader.access$100(URLClassLoader.java:71)
+        at java.net.URLClassLoader$1.run(URLClassLoader.java:361)
+        at java.net.URLClassLoader$1.run(URLClassLoader.java:355)
+        at java.security.AccessController.doPrivileged(Native Method)
+        at java.net.URLClassLoader.findClass(URLClassLoader.java:354)
+        at java.lang.ClassLoader.loadClass(ClassLoader.java:425)
+        at sun.misc.Launcher$AppClassLoader.loadClass(Launcher.java:308)
+        at java.lang.ClassLoader.loadClass(ClassLoader.java:358)
+        at sun.launcher.LauncherHelper.checkAndLoadMain(LauncherHelper.java:482)
+Caused by: java.lang.ClassNotFoundException: org.apache.hadoop.service.AbstractService
+        at java.net.URLClassLoader$1.run(URLClassLoader.java:366)
+        at java.net.URLClassLoader$1.run(URLClassLoader.java:355)
+        at java.security.AccessController.doPrivileged(Native Method)
+        at java.net.URLClassLoader.findClass(URLClassLoader.java:354)
+        at java.lang.ClassLoader.loadClass(ClassLoader.java:425)
+        at sun.misc.Launcher$AppClassLoader.loadClass(Launcher.java:308)
+        at java.lang.ClassLoader.loadClass(ClassLoader.java:358)
+        ... 13 more
+
+```
+
+このクラスは、hadoop-common.jarに入っており、`yarn classpath`で確認するとこのjarもCLASSPATHに含まれているのだが、、、
+
+(1/9追記)どうやら、`tez.lib.uris`の問題だった模様.以下のように、HDFSに乗せた`tez.tar.gz`のパスを指定したらうまく動作した.
+
+```
+    <property>
+      <name>tez.lib.uris</name>
+      <value>/hdp/apps/current/tez/tez.tar.gz</value>
+    </property>
+```
+
+
+## まとめ
+
+ということで、HDP2.2のクラスタを作ろうとして色々うまくいかなかったのでまとめてみた. ~~あとはTezのエラーを解消したいなぁ.~~ あと、マニュアルをブラウザで見るととても見づらいので、PDFをダウンロードして手元で見た方が良い.
