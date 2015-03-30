@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Fluentd | Tech Notes]]></title>
   <link href="http://ogibayashi.github.io/blog/categories/fluentd/atom.xml" rel="self"/>
   <link href="http://ogibayashi.github.io/"/>
-  <updated>2015-03-30T22:25:13+09:00</updated>
+  <updated>2015-03-30T22:26:35+09:00</updated>
   <id>http://ogibayashi.github.io/</id>
   <author>
     <name><![CDATA[OGIBAYASHI Hironori]]></name>
@@ -344,6 +344,404 @@ end
 <li>Filterは、レコードに対する連続した処理を表現する、Pipelineという新たな仕組みを導入することで実現されている</li>
 </ul>
 
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Fluentdで Incompatible Character Encodingのエラーが出た話]]></title>
+    <link href="http://ogibayashi.github.io/blog/2015/02/28/incompatible-character-encodings-in-fluentd/"/>
+    <updated>2015-02-28T22:24:31+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2015/02/28/incompatible-character-encodings-in-fluentd</id>
+    <content type="html"><![CDATA[<p>Fluentdに対して、in_httpのインタフェースで送信してくるアプリケーションがあるのだけど、そのアプリケーションに対してリリースがあった後、一部のメッセージがうまく送れないという話があった. 見てみたら、受信側Fluentdに以下のようなメッセージが多発していた. fluentdのバージョンは0.10.48.</p>
+
+<p><code>``
+2015-02-06 14:14:52 +0900 [warn]: fluent/engine.rb:156:rescue in emit_stream: em
+it transaction failed  error_class=Encoding::CompatibilityError error=#&lt;Encoding
+::CompatibilityError: incompatible character encodings: ASCII-8BIT and UTF-8&gt;
+  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:32:in
+</code>&lt;&lt;&lsquo;
+  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:32:in
+<code>to_msgpack'
+  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:32:in
+</code>block in to_msgpack_stream&rsquo;
+  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:54:in
+<code>call'
+  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:54:in
+</code>each'
+  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:31:in
+<code>to_msgpack_stream'
+  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/output.rb:424:i
+n</code>emit'
+  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/output.rb:33:in
+ `next'</p>
+
+<p>```</p>
+
+<p>全てのメッセージが送れてないわけではない模様. 適当なメッセージをcurlで送ってみても問題ないので
+なんだろう、、、と思っていたら、以下のpull requestを見つけた. 偶然、事象が発生したのと同日.</p>
+
+<p><a href="https://github.com/fluent/fluentd/pull/550">https://github.com/fluent/fluentd/pull/550</a></p>
+
+<p>Messagepackの不具合?で、5KBを超える、且つエンコードがASCII-8BIT以外の文字列をシリアライズしようとした時に、このエラーが出ることがあるそうな. msgpack 0.5.11で修正.</p>
+
+<p>アプリケーションの人に聞いてみると、確かにメッセージサイズは大幅に増えているようだし、エラー発生時のパケットを見ても、メッセージサイズが数百KBととても大きい. このpull requestは v0.10.60で取り込まれているようなので、td-agentを2.1.4に上げてテストをしてみたら発生しなくなった.</p>
+
+<p>もっと前にこれが発生してたら困ってただろうな. ちょうど修正されてて助かりました.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Fluentd v0.12のAt-least-once Semanticsを試す]]></title>
+    <link href="http://ogibayashi.github.io/blog/2014/12/16/try-fluentd-v0-dot-12-at-least-once/"/>
+    <updated>2014-12-16T00:34:17+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2014/12/16/try-fluentd-v0-dot-12-at-least-once</id>
+    <content type="html"><![CDATA[<p>Fluentd v0.12のin/out_forwardでAt-least-once semanticsがサポートされるようになった. 今まではアプリケーションレイヤでの到達確認がなかったので、一部のネットワーク障害などのケースでは、送信されたように見えて実は送信されていない、という事象が発生し得た. v0.12から導入された<code>require_ack_response</code>オプションを使うと、このような事象を避けることができる.</p>
+
+<p>この機能が導入されたpull requestはこちら.
+<a href="https://github.com/fluent/fluentd/pull/428">https://github.com/fluent/fluentd/pull/428</a></p>
+
+<p>ということで試してみた.</p>
+
+<h2>require_ack_responseがない場合</h2>
+
+<p>fluentd 0.10.56で試す. (0.12で試しても良かったのだけど..)</p>
+
+<p>送信側は以下の設定. 相手先fluentdが早々にdetachされてしまうのを避けるため、<code>hard_timeout</code>と<code>phi_threshold</code>を入れた</p>
+
+<p>```
+<source>
+   type forward
+</source>
+<match test.**>
+   type forward
+   flush_interval 1s
+   heartbeat_type tcp
+   hard_timeout 600
+   phi_threshold 300
+   buffer_type file
+   buffer_path /var/log/fluentd.*.buffer
+   <server></p>
+
+<pre><code> host  192.168.1.2
+ port 24224
+</code></pre>
+
+<p>   </server>
+</match></p>
+
+<p>```</p>
+
+<p>受信側はこんな感じ</p>
+
+<p>```
+<source>
+  type forward
+</source></p>
+
+<p><match test.**>
+  type file
+  path /tmp/fluentd_forward.log
+</match></p>
+
+<p>```</p>
+
+<p>で、パケットが届かないが、アプリケーションにエラーが返らない状況を作るため、受信側のiptablesでSYNが立っていないパケットをドロップするようにする. SYNは相手に到達し、SYN-ACKも返るため、アプリケーションからは正常に接続されている様に見えることになる.</p>
+
+<p>```</p>
+
+<h1>iptables -A INPUT -p tcp &mdash;syn &mdash;dport 24224 -j ACCEPT</h1>
+
+<h1>iptables -A INPUT -p tcp &mdash;dport 24224 -j DROP</h1>
+
+<p>```</p>
+
+<p>これでログを送ってみる</p>
+
+<p>```</p>
+
+<h1>echo &lsquo;{&ldquo;aaa&rdquo;: 1}&rsquo; | fluent-cat  test.data</h1>
+
+<h1>echo &lsquo;{&ldquo;bbb&rdquo;: 2}&rsquo; | fluent-cat test.data</h1>
+
+<p>```</p>
+
+<p>netstatで送信側のソケットを見る. Send-Qにデータが溜まっている.</p>
+
+<p>```</p>
+
+<h1>netstat -na | grep 24224</h1>
+
+<p>tcp        0      0 0.0.0.0:24224               0.0.0.0:<em>                   LISTEN
+tcp        0      1 192.168.1.1:10652          192.168.1.2:24224          FIN_WAIT1
+tcp        0     41 192.168.1.1:10655          192.168.1.2:24224          FIN_WAIT1
+udp        0      0 0.0.0.0:24224               0.0.0.0:</em></p>
+
+<p>```</p>
+
+<p>しばらくすると、ソケットが破棄される.</p>
+
+<p>```</p>
+
+<h1>netstat -na | grep 24224</h1>
+
+<p>tcp        0      0 0.0.0.0:24224               0.0.0.0:<em>                   LISTEN    <br/>
+tcp        0      1 192.168.1.1:10664           192.168.1.2:24224          FIN_WAIT1 <br/>
+udp        0      0 0.0.0.0:24224               0.0.0.0:</em></p>
+
+<p>```</p>
+
+<p>この状況だと、アプリケーション的には正常に送れているように見えてしまうので、バッファは削除される. つまりログがロストした状況.</p>
+
+<p>```</p>
+
+<h1>ls /var/log/fluentd.*.buffer</h1>
+
+<p>ls: cannot access /var/log/fluentd.*.buffer: そのようなファイルやディレクトリはありません</p>
+
+<p>```</p>
+
+<h2>require_ack_responseを使う</h2>
+
+<p>次に、送受信共に<code>v0.12.1</code>にして、送信側に<code>require_ack_response</code>の設定を入れてみる.</p>
+
+<p>```
+  <source></p>
+
+<pre><code>type forward
+</code></pre>
+
+<p>  </source>
+  <match test.**></p>
+
+<pre><code>type forward
+flush_interval 1s
+heartbeat_type tcp
+hard_timeout 600
+phi_threshold 300
+buffer_type file
+buffer_path /var/log/fluentd.*.buffer
+require_ack_response 
+&lt;server&gt;
+  host 192.168.1.2
+  port 24224
+&lt;/server&gt;
+</code></pre>
+
+<p>  </match></p>
+
+<p>```</p>
+
+<p>同様にfluent-catで送る. 今度は、一定時間後に以下のようにエラーになった.</p>
+
+<p><code>``
+2014-12-15 15:25:56 +0900 [warn]: no response from 192.168.1.2:24224. regard it as unavailable.
+2014-12-15 15:26:56 +0900 [warn]: temporarily failed to flush the buffer. next_retry=2014-12-15 15:22:46 +0900 error_class="Fluent::ForwardOutputACKTimeoutError" error="node 10.29.254.66:24224 does not return ACK" plugin_id="object:16c7e3c"
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:321:in</code>send_data'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:169:in <code>block in write_objects'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:163:in</code>times'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:163:in <code>write_objects'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/output.rb:459:in</code>write'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/buffer.rb:325:in <code>write_chunk'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/buffer.rb:304:in</code>pop'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/output.rb:320:in <code>try_flush'
+  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/output.rb:140:in</code>run'</p>
+
+<p>```</p>
+
+<p>バッファも残っている</p>
+
+<p>```</p>
+
+<h1>ls /var/log/fluentd.test.data.*.buffer</h1>
+
+<p>/var/log/fluentd.test.data.b50a3b457dcfed028.buffer  /var/log/fluentd.test.data.q50a3b455b1eac4ca.buffer
+```</p>
+
+<p>しばらく放置した後、iptablesを解除したら無事に送信された.</p>
+
+<h2>まとめ</h2>
+
+<p>Fluentd v0.12で導入されたAt-least-once semanticsを試してみた. アプリケーションレイヤでの到達確認が実装されることで、TCPレイヤでパケットがうまく届いていないケースについても、fluentdがそれを検知して再送してくれることが確認できた.</p>
+
+<p>ちなみに自分のところでは、ruby1.9上でfluentdを動かしていた時にプロセスが短時間ブロックするような事象が多発していて、それに起因してログのロストが発生したことがある. 恐らく、上記のようにTCPのコネクションは確立したように見えて、実は相手側がハング状態だったためにソケットバッファに滞留、最終的にソケットクローズ時にパケットが破棄されたのだと考えている.
+(この時は、td-agent2にしたら解消した)</p>
+
+<p><code>require_ack_response</code>により、そのようなケースでもfluentdがちゃんと検知して再送してくれるので、このオプションは是非入れておきたい.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Fluentdの障害時動作]]></title>
+    <link href="http://ogibayashi.github.io/blog/2014/06/04/how-fluentd-works-in-case-of-failures/"/>
+    <updated>2014-06-04T23:12:23+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2014/06/04/how-fluentd-works-in-case-of-failures</id>
+    <content type="html"><![CDATA[<p>Fluentdが障害の時にどのような動作をするのか調べてみたので、そのメモ. td-agent 1.1.17(fluentd v0.10.39)で確認したつもりだが、もしかしたらもう少し新しいので確認したケースもあるかも. BufferedOutputを中心に記載している.</p>
+
+<h2>BufferdOutputの基本</h2>
+
+<p>fluentdの特徴の一つとして、fluentd送信先で障害があり、メッセージが送れなかった場合は大抵(BufferedOutputを使っているプラグインであれば)fluentdでバッファリングし、一定時間後に再送してくれる.</p>
+
+<p>このバッファリングのサイズは、BufferedOutputプラグインのbuffer_chunk_limit*buffer_queue_limitで決まる.</p>
+
+<p>これらのデフォルト値は以下に解説付きでまとまっている. (良く参照させて頂いています)
+<a href="http://d.hatena.ne.jp/tagomoris/20130123/1358929254">FluentdでバッファつきOutputPluginを使うときのデフォルト値</a></p>
+
+<h2>何回くらいリトライするの？ リトライの間隔は？</h2>
+
+<p>リトライの回数は、retry_limit(デフォルト 17)で指定された回数まで. 間隔は一定ではなく、段々延びていく. 具体的に間隔を計算してるのは、BufferedOutput#calc_retry_wait.</p>
+
+<p>リトライ間隔は、以下のパラメータでコントロールすることができる</p>
+
+<ul>
+<li>max_retry_wait(デフォルト: nil = 上限なし)</li>
+<li>retry_wait (デフォルト: 1.0)</li>
+</ul>
+
+
+<p>同じメソッドを使って、実際にどれくらいになるのかを計算させてみた. 以下で例えば、1=>2は、一度送信に失敗してから、2回目の送信を試みるまでという意味. 単位は秒. 全てデフォルト値だと、以下の様な感じ. 最大だと、33765秒=9時間22分になる.</p>
+
+<p>```
+1=>2 : 1.0799124443510373
+2=>3 : 1.8141315928054327
+3=>4 : 3.5115188260172046
+4=>5 : 7.106397160810471
+5=>6 : 14.175590112052593
+6=>7 : 31.434005639868758
+7=>8 : 68.4743252224448
+8=>9 : 116.47949944913451
+9=>10 : 279.97276701667636
+10=>11 : 487.69976826480445
+11=>12 : 909.7729519328531
+12=>13 : 2125.0559803853725
+13=>14 : 3717.0255349933364
+14=>15 : 8658.913465429461
+15=>16 : 18189.354025481873
+16=>17 : 33765.98470398931</p>
+
+<p>```</p>
+
+<p>例えば、max_retry_wait=120とすると、以下のようになる. 何回リトライしても、リトライ間隔の上限はmax_retry_waitまでになる.</p>
+
+<p>```
+1=>2 : 1.0717022666140232
+2=>3 : 1.9866738239982864
+3=>4 : 3.9258714996769903
+4=>5 : 7.002702902759963
+5=>6 : 15.817343449261045
+6=>7 : 34.49173945537066
+7=>8 : 65.98469012616731
+8=>9 : 120
+9=>10 : 120
+10=>11 : 120
+11=>12 : 120
+12=>13 : 120
+13=>14 : 120
+14=>15 : 120
+15=>16 : 120
+16=>17 : 120</p>
+
+<p>```</p>
+
+<p>retry_waitを半分の0.5にすると、全てのリトライ間隔が半分になる.</p>
+
+<p>```
+1=>2 : 0.46442639898905974
+2=>3 : 0.9688421553729557
+3=>4 : 2.2291735347851613
+4=>5 : 3.545406346443683
+5=>6 : 7.824124603156501
+6=>7 : 17.564462446502926
+7=>8 : 30.97024814321994
+8=>9 : 71.84343582620227
+9=>10 : 127.87010583643446
+10=>11 : 286.751861977861
+11=>12 : 551.32668884554
+12=>13 : 1077.2785515357239
+13=>14 : 2095.196745718026
+14=>15 : 3995.080966184667
+15=>16 : 9131.408473518048
+16=>17 : 16810.484835714517</p>
+
+<p>```</p>
+
+<p>リトライの頻度を増やす(リトライ間隔を減らす)場合は、併せてretry_limitも変更しないと、早々にリトライアウトしてしまう、ということになるので注意.</p>
+
+<h2>リトライ回数が超過したら？</h2>
+
+<p>リトライ回数を超過した場合、secodaryディレクティブを指定しておけば、そちらに出力される. 通常は、ファイルに出力しておいて、後からリカバリに使う、というケースが多いと思う.</p>
+
+<p>```
+  <secondary></p>
+
+<pre><code>type file
+path /path/to/forward-failed
+</code></pre>
+
+<p>  </secondary>
+```</p>
+
+<p>このようなケースでは、ログに以下のように出力される</p>
+
+<p>```
+2014-06-22 07:06:40 +0900 [warn]: fluent/output.rb:352:rescue in try_flush: retry count exceededs limit. falling back to secondary output.</p>
+
+<p>```</p>
+
+<h2>キューが溢れたら？</h2>
+
+<p>キュー(バッファ)が溢れると、fluentdのログに以下のようなメッセージが出る.</p>
+
+<p>```
+2014-05-25 11:30:23 +0900 [warn]: fluent/engine.rb:149:rescue in emit_stream: emit transaction failed  error_class=Fluent::BufferQueueLimitError error=#&lt;Fluent::BufferQueueLimitError: queue size exceeds limit></p>
+
+<p>```</p>
+
+<p>この場合、inputプラグインがEngine.emitを実行する際にExceptionが発生する. プラグインが、これをrescueしていない場合、inputプラグインは停止する. rescueしている場合はinputプラグインの実装次第だが、大抵Exceptionは無視されてemitしたデータは破棄される.
+(既に溜めるためのキューがあふれているので、それしか無い)</p>
+
+<h2>送信先が復活したら?</h2>
+
+<p>再送中に送信先が復活し、再送に成功した場合は以下の様なメッセージが出力される.</p>
+
+<p><code>
+2014-05-25 11:33:01 +0900 [warn]: fluent/output.rb:312:try_flush: retry succeeded. instance=70365422937420
+</code></p>
+
+<p>ここで、注意点として送信先が復活してもすぐに再送してくれるわけではない. これは、送信先とのハートビートを行っているout_forwardでも一緒. BufferedOutput#try_flushのコードを見ると分かるが、リトライ中で、まだ次のリトライ時刻に達していない場合は、送信は行わない.</p>
+
+<p>なので、retryを繰り返して再送間隔が延びている場合は、次の再送タイミングになるまでキューが溜まり続ける(もしくは、既に溢れている場合は溢れ続ける)</p>
+
+<h2>キューを強制的に送信することはできないの？</h2>
+
+<p>リトライ中の場合以外であれば、fluentdのプロセスにSIGUSR1を送ることでキューが吐き出される. リトライ中の場合は、次のリトライタイミングまでは送信されない. 全てのキューを吐き出すには、プロセスを停止するしかない.</p>
+
+<p>プロセス停止時の挙動は使用しているバッファプラグインによって異なるが</p>
+
+<ul>
+<li>buf_memoryの場合
+
+<ul>
+<li>プロセス停止時に全てのキューが吐き出される.</li>
+</ul>
+</li>
+<li>buf_fileの場合
+
+<ul>
+<li>flush_at_shutdownがtrue(デフォルト false)の場合のみ、プロセス停止時に全てのキューが吐き出される.</li>
+</ul>
+</li>
+</ul>
+
+
+<p>長くなったのでここまで.</p>
 ]]></content>
   </entry>
   
