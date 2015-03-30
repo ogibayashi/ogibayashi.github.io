@@ -176,7 +176,7 @@ Inputプラグインについては`@label`が設定されている場合とそ�
 
 ### 絵にすると、、、
 
-FluentdのBlogに書かれているサンプルを元に、どんな感じのオブジェクトたちが出来上がるかを絵にするとこんな感じ.
+[FluentdのBlog](http://www.fluentd.org/blog/fluentd-v0.12-is-released)に書かれているサンプルを元に、どんな感じのオブジェクトたちが出来上がるかを絵にするとこんな感じ.
 
 ![RootAgent](/images/2015/201503_Fluentd_Routing.png)
 
@@ -273,4 +273,4 @@ router.emit(tag, time, record)
 
 * v0.12のLabel, Filterを実現している部分のコードを読んでみた
 * Labelの部分は、RootAgent(設定ファイルのROOT部分)および各labelディレクティブごとにルーティングテーブル(`EventRouter`)を分けることにより実現されている
-* Filterはレコードが順次処理されていく部分に対し、Pipelineという仕組みを導入することで実現されている
+* Filterは、レコードに対する連続した処理を表現する、Pipelineという新たな仕組みを導入することで実現されている
