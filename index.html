@@ -9,7 +9,7 @@
   <meta name="author" content="OGIBAYASHI Hironori">
 
   
-  <meta name="description" content="Fluentdに対して、in_httpのインタフェースで送信してくるアプリケーションがあるのだけど、そのアプリケーションに対してリリースがあった後、一部のメッセージがうまく送れないという話があった. 見てみたら、受信側Fluentdに以下のようなメッセージが多発していた. &hellip;">
+  <meta name="description" content="Fluentd v0.12の目玉機能としてFilterとLabelがある. この機能の導入にあたってはメッセージのルーティングを行う部分のコードがガラリと変わっているはずなので、興味本位で読んでみた. 機能についての参考文書 そもそもFilterやLabelって何？というあたりは以下が参考になる &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -63,6 +63,465 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/03/24/code-reading-of-fluentd-v0-dot-12-filter-and-label-related/">FluentdのFilter&Label周りのコードを読んだメモ</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2015-03-24T13:45:46+09:00" pubdate data-updated="true">Mar 24<span>th</span>, 2015</time>
+        
+           | <a href="/blog/2015/03/24/code-reading-of-fluentd-v0-dot-12-filter-and-label-related/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2015/03/24/code-reading-of-fluentd-v0-dot-12-filter-and-label-related/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>Fluentd v0.12の目玉機能としてFilterとLabelがある. この機能の導入にあたってはメッセージのルーティングを行う部分のコードがガラリと変わっているはずなので、興味本位で読んでみた.</p>
+
+<h2>機能についての参考文書</h2>
+
+<p>そもそもFilterやLabelって何？というあたりは以下が参考になる。</p>
+
+<ul>
+<li><a href="http://repeatedly.github.io/ja/2014/08/fluentd-filter-and-label/">Fluentd v0.12でのFilterとLabel</a></li>
+<li><a href="http://www.fluentd.org/blog/fluentd-v0.12-is-released">Fluentd v0.12 is Released</a></li>
+<li><a href="http://qiita.com/muran001/items/f73d19398b750abb9c2d">Fluentd v0.12の目玉機能らしいFilterを試してみた</a></li>
+<li><a href="http://qiita.com/sonots/items/a01d2233210b7b059967">Fluentd v0.12 ラベル機能の使い方とプラグインの改修方法</a></li>
+</ul>
+
+
+<h2>v0.10ではどうだったか</h2>
+
+<p>Matchクラスが<code>match</code>ディレクティブで宣言されたタグのパターンと、行き先のOutputクラスを保持していて、<code>EngineClass#emit</code> (最終的な呼び出し先は<code>emit_stream</code>)で該当するMatchを探し出し、そこに向けて<code>emit</code>する、という形だった.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class='ruby'><span class='line'>  <span class="k">def</span> <span class="nf">emit_stream</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">es</span><span class="p">)</span>
+</span><span class='line'>      <span class="n">target</span> <span class="o">=</span> <span class="vi">@match_cache</span><span class="o">[</span><span class="n">tag</span><span class="o">]</span>
+</span><span class='line'>      <span class="k">unless</span> <span class="n">target</span>
+</span><span class='line'>        <span class="n">target</span> <span class="o">=</span> <span class="n">match</span><span class="p">(</span><span class="n">tag</span><span class="p">)</span> <span class="o">||</span> <span class="no">NoMatchMatch</span><span class="o">.</span><span class="n">new</span>
+</span><span class='line'>        <span class="c1"># this is not thread-safe but inconsistency doesn&#39;t</span>
+</span><span class='line'>        <span class="c1"># cause serious problems while locking causes.</span>
+</span><span class='line'>        <span class="k">if</span> <span class="vi">@match_cache_keys</span><span class="o">.</span><span class="n">size</span> <span class="o">&gt;=</span> <span class="no">MATCH_CACHE_SIZE</span>
+</span><span class='line'>          <span class="vi">@match_cache</span><span class="o">.</span><span class="n">delete</span> <span class="vi">@match_cache_keys</span><span class="o">.</span><span class="n">shift</span>
+</span><span class='line'>        <span class="k">end</span>
+</span><span class='line'>        <span class="vi">@match_cache</span><span class="o">[</span><span class="n">tag</span><span class="o">]</span> <span class="o">=</span> <span class="n">target</span>
+</span><span class='line'>        <span class="vi">@match_cache_keys</span> <span class="o">&lt;&lt;</span> <span class="n">tag</span>
+</span><span class='line'>      <span class="k">end</span>
+</span><span class='line'>      <span class="n">target</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">es</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>なので、ルーティングを管理するテーブルは<code>EngineClass</code>の<code>@matches</code>一つだったし、tagがルーティングのキーになっていた. 複数のOutputで順番に処理したい場合は都度tagを書き換えていく必要があった.</p>
+
+<h2>v0.12の場合</h2>
+
+<p><code>Agent</code>, <code>RootAgent</code>, <code>Label</code>, <code>EventRouter</code>と言った新しいクラスが導入されている.</p>
+
+<ul>
+<li><code>Label</code>
+
+<ul>
+<li>各<code>label</code>ディレクティブの中に存在するFilterおよびOutputプラグインを管理するクラス</li>
+</ul>
+</li>
+<li><code>RootAgent</code>
+
+<ul>
+<li><code>label</code>ディレクティブに属さない(設定ファイルのルート直下にある)Input, Filter, Outputプラグイン、および各Labelクラスを管理するクラス</li>
+</ul>
+</li>
+<li><code>Agent</code>
+
+<ul>
+<li><code>RootAgent</code>および<code>Label</code>の親クラス.</li>
+</ul>
+</li>
+<li><code>EventRouter</code>
+
+<ul>
+<li>ルーティングのためのルール(どのタグパターンに対して、どのようなfilterやmatchが存在するか)を管理し、イベントのルーティングを行うクラス</li>
+</ul>
+</li>
+</ul>
+
+
+<p><code>RootAgent</code>および<code>Label</code>のインスタンスは、それぞれ自分自身が管理する範囲のルーティングを行う<code>EventRouter</code>クラスのインスタンスを保持している.</p>
+
+<p>以下、実際のコードを見てみる.</p>
+
+<h2>起動部分</h2>
+
+<p>まずは、configurationを読み込んでいく段階でどのようなクラスが生成されていくのかを見てみる.</p>
+
+<h3>Supervisor#start (init_engine)</h3>
+
+<p><a href="https://github.com/fluent/fluentd/blob/f6aa9a4b275e4e9885bb912bcf0e930966d8e246/lib/fluent/supervisor.rb#L124">Supervisor#start</a></p>
+
+<p>Supervisorが起動して、色々と準備していく部分. <code>init_engine</code>内で <a href="https://github.com/fluent/fluentd/blob/f6aa9a4b275e4e9885bb912bcf0e930966d8e246/lib/fluent/engine.rb#L41">Engine#init</a> が呼ばれ、ここで<code>RootAgent</code>が生成される.</p>
+
+<p><code>RootAgent</code>の親クラスである<code>Agent</code>のコンストラクタは以下のようになっている</p>
+
+<p><a href="https://github.com/fluent/fluentd/blob/f6aa9a4b275e4e9885bb912bcf0e930966d8e246/lib/fluent/agent.rb#L29">Agent#initialize</a></p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+</pre></td><td class='code'><pre><code class='ruby'><span class='line'><span class="k">def</span> <span class="nf">initialize</span><span class="p">(</span><span class="n">opts</span> <span class="o">=</span> <span class="p">{})</span>
+</span><span class='line'>  <span class="k">super</span><span class="p">()</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="vi">@context</span> <span class="o">=</span> <span class="kp">nil</span>
+</span><span class='line'>  <span class="vi">@outputs</span> <span class="o">=</span> <span class="o">[]</span>
+</span><span class='line'>  <span class="vi">@filters</span> <span class="o">=</span> <span class="o">[]</span>
+</span><span class='line'>  <span class="vi">@started_outputs</span> <span class="o">=</span> <span class="o">[]</span>
+</span><span class='line'>  <span class="vi">@started_filters</span> <span class="o">=</span> <span class="o">[]</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="vi">@log</span> <span class="o">=</span> <span class="no">Engine</span><span class="o">.</span><span class="n">log</span>
+</span><span class='line'>  <span class="vi">@event_router</span> <span class="o">=</span> <span class="no">EventRouter</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="no">NoMatchMatch</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="n">log</span><span class="p">),</span> <span class="nb">self</span><span class="p">)</span>
+</span><span class='line'>  <span class="vi">@error_collector</span> <span class="o">=</span> <span class="kp">nil</span>
+</span><span class='line'><span class="k">end</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>自身が管理するOutputクラス、Filterクラス達を保持するための変数が存在している. また、そのスコープでのルーティングを行う<code>EventRouter</code>クラスをここで生成している.</p>
+
+<p><code>RootAgent</code>については、これに加えて更にInputやLabelクラスも管理するような構造になっている. (<a href="https://github.com/fluent/fluentd/blob/f6aa9a4b275e4e9885bb912bcf0e930966d8e246/lib/fluent/root_agent.rb#L46">root_agent.rb</a>)</p>
+
+<h3>Supervisor#start (run_configure)</h3>
+
+<p><code>Supervisor#run_conigure</code>が呼ばれると、<code>Engine#configure</code>を経由して<code>RootAgent#configure</code>が呼ばれる.</p>
+
+<p><a href="https://github.com/fluent/fluentd/blob/f6aa9a4b275e4e9885bb912bcf0e930966d8e246/lib/fluent/root_agent.rb#L62">RootAgent#configure</a></p>
+
+<p>ちょっと長いが引用.これにより以下が行われる</p>
+
+<ul>
+<li>labelディレクティブがあった場合
+
+<ul>
+<li> <a href="https://github.com/fluent/fluentd/blob/f6aa9a4b275e4e9885bb912bcf0e930966d8e246/lib/fluent/root_agent.rb#L155">add_label</a>により新規<code>Label</code>オブジェクトを生成</li>
+<li> さらに、その<code>Label</code>オブジェクトの<code>configure</code>を呼び出す. <code>configure</code>の内容については、以下の<code>Agent#configure</code>を参照.</li>
+</ul>
+</li>
+<li>sourceディレクティブがあった場合
+
+<ul>
+<li><a href="https://github.com/fluent/fluentd/blob/f6aa9a4b275e4e9885bb912bcf0e930966d8e246/lib/fluent/root_agent.rb#L141">add_source</a>によりInputプラグインのインスタンスを生成</li>
+<li>Inputプラグインがemitする際の投げ先として、以下を登録.
+
+<ul>
+<li>そのInputプラグインで<code>@label</code>が設定されている場合→設定された<code>Label</code>オブジェクトの<code>EventRouter</code>を登録</li>
+<li>それ以外の場合→<code>RootAgent</code>の<code>EventRouter</code>を登録</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+
+<p>Inputプラグインについては<code>@label</code>が設定されている場合とそうでない場合で、emit先の<code>EventRouter</code>を切り替えることができるようになっている.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class='ruby'><span class='line'><span class="k">def</span> <span class="nf">configure</span><span class="p">(</span><span class="n">conf</span><span class="p">)</span>
+</span><span class='line'>  <span class="n">error_label_config</span> <span class="o">=</span> <span class="kp">nil</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="c1"># initialize &lt;label&gt; elements before configuring all plugins to avoid &#39;label not found&#39; in input, filter and output.</span>
+</span><span class='line'>  <span class="n">label_configs</span> <span class="o">=</span> <span class="p">{}</span>
+</span><span class='line'>  <span class="n">conf</span><span class="o">.</span><span class="n">elements</span><span class="o">.</span><span class="n">select</span> <span class="p">{</span> <span class="o">|</span><span class="n">e</span><span class="o">|</span> <span class="n">e</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;label&#39;</span> <span class="p">}</span><span class="o">.</span><span class="n">each</span> <span class="p">{</span> <span class="o">|</span><span class="n">e</span><span class="o">|</span>
+</span><span class='line'>    <span class="nb">name</span> <span class="o">=</span> <span class="n">e</span><span class="o">.</span><span class="n">arg</span>
+</span><span class='line'>    <span class="k">raise</span> <span class="no">ConfigError</span><span class="p">,</span> <span class="s2">&quot;Missing symbol argument on &lt;label&gt; directive&quot;</span> <span class="k">if</span> <span class="nb">name</span><span class="o">.</span><span class="n">empty?</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">if</span> <span class="nb">name</span> <span class="o">==</span> <span class="no">ERROR_LABEL</span>
+</span><span class='line'>      <span class="n">error_label_config</span> <span class="o">=</span> <span class="n">e</span>
+</span><span class='line'>    <span class="k">else</span>
+</span><span class='line'>      <span class="n">add_label</span><span class="p">(</span><span class="nb">name</span><span class="p">)</span>
+</span><span class='line'>      <span class="n">label_configs</span><span class="o">[</span><span class="nb">name</span><span class="o">]</span> <span class="o">=</span> <span class="n">e</span>
+</span><span class='line'>    <span class="k">end</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>  <span class="c1"># Call &#39;configure&#39; here to avoid &#39;label not found&#39;</span>
+</span><span class='line'>  <span class="n">label_configs</span><span class="o">.</span><span class="n">each</span> <span class="p">{</span> <span class="o">|</span><span class="nb">name</span><span class="p">,</span> <span class="n">e</span><span class="o">|</span> <span class="vi">@labels</span><span class="o">[</span><span class="nb">name</span><span class="o">].</span><span class="n">configure</span><span class="p">(</span><span class="n">e</span><span class="p">)</span> <span class="p">}</span>
+</span><span class='line'>  <span class="n">setup_error_label</span><span class="p">(</span><span class="n">error_label_config</span><span class="p">)</span> <span class="k">if</span> <span class="n">error_label_config</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">super</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="c1"># initialize &lt;source&gt; elements</span>
+</span><span class='line'>  <span class="k">if</span> <span class="vi">@without_source</span>
+</span><span class='line'>    <span class="n">log</span><span class="o">.</span><span class="n">info</span> <span class="s2">&quot;&#39;--without-source&#39; is applied. Ignore &lt;source&gt; sections&quot;</span>
+</span><span class='line'>  <span class="k">else</span>
+</span><span class='line'>    <span class="n">conf</span><span class="o">.</span><span class="n">elements</span><span class="o">.</span><span class="n">select</span> <span class="p">{</span> <span class="o">|</span><span class="n">e</span><span class="o">|</span> <span class="n">e</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;source&#39;</span> <span class="p">}</span><span class="o">.</span><span class="n">each</span> <span class="p">{</span> <span class="o">|</span><span class="n">e</span><span class="o">|</span>
+</span><span class='line'>      <span class="n">type</span> <span class="o">=</span> <span class="n">e</span><span class="o">[</span><span class="s1">&#39;@type&#39;</span><span class="o">]</span> <span class="o">||</span> <span class="n">e</span><span class="o">[</span><span class="s1">&#39;type&#39;</span><span class="o">]</span>
+</span><span class='line'>      <span class="k">raise</span> <span class="no">ConfigError</span><span class="p">,</span> <span class="s2">&quot;Missing &#39;type&#39; parameter on &lt;source&gt; directive&quot;</span> <span class="k">unless</span> <span class="n">type</span>
+</span><span class='line'>      <span class="n">add_source</span><span class="p">(</span><span class="n">type</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>  <span class="k">end</span>
+</span><span class='line'><span class="k">end</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>さらに、<code>RootAgent</code>の親クラスである<code>Agent#configure</code>では同様にmatchに対して<code>add_match</code>、filterについて<code>add_filter</code>が呼ばれる.</p>
+
+<p><a href="https://github.com/fluent/fluentd/blob/f6aa9a4b275e4e9885bb912bcf0e930966d8e246/lib/fluent/agent.rb#L50">Anget#configure</a></p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+</pre></td><td class='code'><pre><code class='ruby'><span class='line'><span class="k">def</span> <span class="nf">configure</span><span class="p">(</span><span class="n">conf</span><span class="p">)</span>
+</span><span class='line'>  <span class="k">super</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="c1"># initialize &lt;match&gt; and &lt;filter&gt; elements</span>
+</span><span class='line'>  <span class="n">conf</span><span class="o">.</span><span class="n">elements</span><span class="o">.</span><span class="n">select</span> <span class="p">{</span> <span class="o">|</span><span class="n">e</span><span class="o">|</span> <span class="n">e</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;filter&#39;</span> <span class="o">||</span> <span class="n">e</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;match&#39;</span> <span class="p">}</span><span class="o">.</span><span class="n">each</span> <span class="p">{</span> <span class="o">|</span><span class="n">e</span><span class="o">|</span>
+</span><span class='line'>    <span class="n">pattern</span> <span class="o">=</span> <span class="n">e</span><span class="o">.</span><span class="n">arg</span><span class="o">.</span><span class="n">empty?</span> <span class="p">?</span> <span class="s1">&#39;**&#39;</span> <span class="p">:</span> <span class="n">e</span><span class="o">.</span><span class="n">arg</span>
+</span><span class='line'>    <span class="n">type</span> <span class="o">=</span> <span class="n">e</span><span class="o">[</span><span class="s1">&#39;@type&#39;</span><span class="o">]</span> <span class="o">||</span> <span class="n">e</span><span class="o">[</span><span class="s1">&#39;type&#39;</span><span class="o">]</span>
+</span><span class='line'>    <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;filter&#39;</span>
+</span><span class='line'>      <span class="n">add_filter</span><span class="p">(</span><span class="n">type</span><span class="p">,</span> <span class="n">pattern</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+</span><span class='line'>    <span class="k">else</span>
+</span><span class='line'>      <span class="n">add_match</span><span class="p">(</span><span class="n">type</span><span class="p">,</span> <span class="n">pattern</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+</span><span class='line'>    <span class="k">end</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'><span class="k">end</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>Agent</code>は<code>Label</code>の親クラスでもあるので、新しい<code>Label</code>オブジェクトの<code>configure</code>が呼び出された際もこのコードが実行されることになる.</p>
+
+<p><a href="https://github.com/fluent/fluentd/blob/f6aa9a4b275e4e9885bb912bcf0e930966d8e246/lib/fluent/agent.rb#L134">add_filter</a>や<a href="https://github.com/fluent/fluentd/blob/f6aa9a4b275e4e9885bb912bcf0e930966d8e246/lib/fluent/agent.rb#L122">add_match</a>が何をしているかというと、その<code>Agent</code>が持っている<code>EventRouter</code>に対してルーティングのルール(<code>Rule</code>オブジェクト)を登録している.</p>
+
+<h3>絵にすると、、、</h3>
+
+<p><a href="http://www.fluentd.org/blog/fluentd-v0.12-is-released">FluentdのBlog</a>に書かれているサンプルを元に、どんな感じのオブジェクトたちが出来上がるかを絵にするとこんな感じ.</p>
+
+<p><img src="/images/2015/201503_Fluentd_Routing.png" alt="RootAgent" /></p>
+
+<p>labelごとにルーティングテーブルを持つので、labelが違えば異なるルールでルーティングする、ということができるようになる.</p>
+
+<h2>emitの動き</h2>
+
+<p>ここまでで、各Input, Filter, Outputプラグインインスタンスは、自分がemitする先の<code>EventRouter</code>オブジェクトを知っていることになる.</p>
+
+<p>まず、Inputプラグイン内では自分が知っている<code>EventRouter</code>に<code>emit</code>する.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='ruby'><span class='line'><span class="n">router</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">time</span><span class="p">,</span> <span class="n">record</span><span class="p">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>emit</code>は<code>emit_stream</code>に飛ぶので、以下のコードが呼び出される. <code>match</code>メソッドが返してきたオブジェクトに対して<code>emit</code>する.</p>
+
+<p><a href="https://github.com/fluent/fluentd/blob/f6aa9a4b275e4e9885bb912bcf0e930966d8e246/lib/fluent/event_router.rb#L87">EventRouter#emit_stream</a></p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='ruby'><span class='line'><span class="k">def</span> <span class="nf">emit_stream</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">es</span><span class="p">)</span>
+</span><span class='line'>  <span class="n">match</span><span class="p">(</span><span class="n">tag</span><span class="p">)</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">es</span><span class="p">,</span> <span class="vi">@chain</span><span class="p">)</span>
+</span><span class='line'><span class="k">rescue</span> <span class="o">=&gt;</span> <span class="n">e</span>
+</span><span class='line'>  <span class="vi">@emit_error_handler</span><span class="o">.</span><span class="n">handle_emits_error</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">es</span><span class="p">,</span> <span class="n">e</span><span class="p">)</span>
+</span><span class='line'><span class="k">end</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><a href="https://github.com/fluent/fluentd/blob/f6aa9a4b275e4e9885bb912bcf0e930966d8e246/lib/fluent/event_router.rb#L101">EventRouter#match</a> に飛ぶ. <code>match</code>はemitされたtagを受け取るべきCollectorを返す.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class='ruby'><span class='line'><span class="k">def</span> <span class="nf">match</span><span class="p">(</span><span class="n">tag</span><span class="p">)</span>
+</span><span class='line'>  <span class="n">collector</span> <span class="o">=</span> <span class="vi">@match_cache</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">tag</span><span class="p">)</span> <span class="p">{</span>
+</span><span class='line'>    <span class="n">c</span> <span class="o">=</span> <span class="n">find</span><span class="p">(</span><span class="n">tag</span><span class="p">)</span> <span class="o">||</span> <span class="vi">@default_collector</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>  <span class="n">collector</span>
+</span><span class='line'><span class="k">end</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>このCollectorを探す部分がどうなっているかと言うと、</p>
+
+<p><a href="https://github.com/fluent/fluentd/blob/f6aa9a4b275e4e9885bb912bcf0e930966d8e246/lib/fluent/event_router.rb#L156">event_router#find</a></p>
+
+<p>こんな感じになっている. つまり、Filterが使われていれば<code>Pipeline</code>オブジェクトを生成してそこにFilterやOutputを順次追加していく. Filterがなければ<code>Pipeline</code>の代わりにOutputを直接返す.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class='ruby'><span class='line'><span class="k">def</span> <span class="nf">find</span><span class="p">(</span><span class="n">tag</span><span class="p">)</span>
+</span><span class='line'>  <span class="n">pipeline</span> <span class="o">=</span> <span class="kp">nil</span>
+</span><span class='line'>  <span class="vi">@match_rules</span><span class="o">.</span><span class="n">each_with_index</span> <span class="p">{</span> <span class="o">|</span><span class="n">rule</span><span class="p">,</span> <span class="n">i</span><span class="o">|</span>
+</span><span class='line'>    <span class="k">if</span> <span class="n">rule</span><span class="o">.</span><span class="n">match?</span><span class="p">(</span><span class="n">tag</span><span class="p">)</span>
+</span><span class='line'>      <span class="k">if</span> <span class="n">rule</span><span class="o">.</span><span class="n">collector</span><span class="o">.</span><span class="n">is_a?</span><span class="p">(</span><span class="no">Filter</span><span class="p">)</span>
+</span><span class='line'>        <span class="n">pipeline</span> <span class="o">||=</span> <span class="no">Pipeline</span><span class="o">.</span><span class="n">new</span>
+</span><span class='line'>        <span class="n">pipeline</span><span class="o">.</span><span class="n">add_filter</span><span class="p">(</span><span class="n">rule</span><span class="o">.</span><span class="n">collector</span><span class="p">)</span>
+</span><span class='line'>      <span class="k">else</span>
+</span><span class='line'>        <span class="k">if</span> <span class="n">pipeline</span>
+</span><span class='line'>          <span class="n">pipeline</span><span class="o">.</span><span class="n">set_output</span><span class="p">(</span><span class="n">rule</span><span class="o">.</span><span class="n">collector</span><span class="p">)</span>
+</span><span class='line'>        <span class="k">else</span>
+</span><span class='line'>          <span class="c1"># Use Output directly when filter is not matched</span>
+</span><span class='line'>          <span class="n">pipeline</span> <span class="o">=</span> <span class="n">rule</span><span class="o">.</span><span class="n">collector</span>
+</span><span class='line'>        <span class="k">end</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">pipeline</span>
+</span><span class='line'>      <span class="k">end</span>
+</span><span class='line'>    <span class="k">end</span>
+</span><span class='line'>  <span class="p">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">if</span> <span class="n">pipeline</span>
+</span><span class='line'>    <span class="c1"># filter is matched but no match</span>
+</span><span class='line'>    <span class="n">pipeline</span><span class="o">.</span><span class="n">set_output</span><span class="p">(</span><span class="vi">@default_collector</span><span class="p">)</span>
+</span><span class='line'>    <span class="n">pipeline</span>
+</span><span class='line'>  <span class="k">else</span>
+</span><span class='line'>    <span class="kp">nil</span>
+</span><span class='line'>  <span class="k">end</span>
+</span><span class='line'><span class="k">end</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>よって、<code>emit</code>されたレコードは<code>Pipeline</code>または<code>Output</code>に<code>emit</code>されることになる. そして、<code>Pipeline</code>に<code>emit</code>された場合は以下のコードに辿り着き、順番にFilterを通った後に最終的にOutputに<code>emit</code>されることになる.</p>
+
+<p><a href="https://github.com/fluent/fluentd/blob/f6aa9a4b275e4e9885bb912bcf0e930966d8e246/lib/fluent/event_router.rb#L147">Pipeline#emit</a></p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+</pre></td><td class='code'><pre><code class='ruby'><span class='line'>  <span class="k">def</span> <span class="nf">emit</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">es</span><span class="p">,</span> <span class="n">chain</span><span class="p">)</span>
+</span><span class='line'>    <span class="n">processed</span> <span class="o">=</span> <span class="n">es</span>
+</span><span class='line'>    <span class="vi">@filters</span><span class="o">.</span><span class="n">each</span> <span class="p">{</span> <span class="o">|</span><span class="n">filter</span><span class="o">|</span>
+</span><span class='line'>      <span class="n">processed</span> <span class="o">=</span> <span class="n">filter</span><span class="o">.</span><span class="n">filter_stream</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">processed</span><span class="p">)</span>
+</span><span class='line'>    <span class="p">}</span>
+</span><span class='line'>    <span class="vi">@output</span><span class="o">.</span><span class="n">emit</span><span class="p">(</span><span class="n">tag</span><span class="p">,</span> <span class="n">processed</span><span class="p">,</span> <span class="n">chain</span><span class="p">)</span>
+</span><span class='line'>  <span class="k">end</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>このようにFilterを実現するためにPipelineという新しい仕組みを導入しているため、tagの書き換えによる多段フィルタをしなくて済むようになっている.</p>
+
+<h2>まとめ</h2>
+
+<ul>
+<li>v0.12のLabel, Filterを実現している部分のコードを読んでみた</li>
+<li>Labelの部分は、RootAgent(設定ファイルのROOT部分)および各labelディレクティブごとにルーティングテーブル(<code>EventRouter</code>)を分けることにより実現されている</li>
+<li>Filterは、レコードに対する連続した処理を表現する、Pipelineという新たな仕組みを導入することで実現されている</li>
+</ul>
+
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -2228,6 +2687,10 @@
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2015/03/24/code-reading-of-fluentd-v0-dot-12-filter-and-label-related/">FluentdのFilter&Label周りのコードを読んだメモ</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2015/02/28/incompatible-character-encodings-in-fluentd/">Fluentdで Incompatible Character Encodingのエラーが出た話</a>
       </li>
     
@@ -2243,15 +2706,11 @@
         <a href="/blog/2014/12/16/try-fluentd-v0-dot-12-at-least-once/">Fluentd v0.12のAt-least-once Semanticsを試す</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2014/12/10/thinkings-to-start-using-docker1/">Dockerを使い始めるための検討</a>
-      </li>
-    
   </ul>
 </section>
 <section>
   <h1>Categories</h1>
-    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/fluentd'>fluentd (3)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (2)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li></ul>
+    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/fluentd'>fluentd (3)</a></li><li><a href='/blog/categories/fluentd'>Fluentd (1)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (2)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li></ul>
 </section>
 
   
