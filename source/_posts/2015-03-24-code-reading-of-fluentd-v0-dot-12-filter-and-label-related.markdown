@@ -4,7 +4,7 @@ title: FluentdのFilter&Label周りのコードを読んだメモ
 date: 2015-03-24 13:45:46 +0900
 comments: true
 published: true
-categories: [Fluentd]
+categories: [fluentd]
 ---
 
 Fluentd v0.12の目玉機能としてFilterとLabelがある. この機能の導入にあたってはメッセージのルーティングを行う部分のコードがガラリと変わっているはずなので、興味本位で読んでみた.
