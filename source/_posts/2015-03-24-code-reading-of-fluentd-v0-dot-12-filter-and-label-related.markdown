@@ -3,7 +3,7 @@ layout: post
 title: FluentdのFilter&Label周りのコードを読んだメモ
 date: 2015-03-24 13:45:46 +0900
 comments: true
-published: false
+published: true
 categories: [Fluentd]
 ---
 
