@@ -9,7 +9,8 @@
   <meta name="author" content="OGIBAYASHI Hironori">
 
   
-  <meta name="description" content="Fluentd v0.12の目玉機能としてFilterとLabelがある. この機能の導入にあたってはメッセージのルーティングを行う部分のコードがガラリと変わっているはずなので、興味本位で読んでみた. 機能についての参考文書 そもそもFilterやLabelって何？というあたりは以下が参考になる &hellip;">
+  <meta name="description" content="Norikraで以下の様な感じの、GROUP BYして、SELECTの中でjavaメソッドを使うようなクエリを登録していたのだけど、なんか生成されるイベントが多い、というのが発端で調べてみた. 1
+SELECT str, str.split(",") as splitted, count(*) &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -63,6 +64,114 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/08/13/esper-and-java-method/">EsperのEPLでjava methodとGROUP Byを使ったらレコードが重複した話</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2015-08-13T10:19:29+09:00" pubdate data-updated="true">Aug 13<span>th</span>, 2015</time>
+        
+           | <a href="/blog/2015/08/13/esper-and-java-method/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2015/08/13/esper-and-java-method/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>Norikraで以下の様な感じの、GROUP BYして、SELECTの中でjavaメソッドを使うようなクエリを登録していたのだけど、なんか生成されるイベントが多い、というのが発端で調べてみた.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>SELECT str, str.split(",") as splitted, count(*) as cnt FROM str_stream.win:time_batch(10 sec) GROUP BY str</span></code></pre></td></tr></table></div></figure>
+
+
+<p>上記のクエリを登録した状態で、以下のようにイベントを投入する.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ echo '{"str":"a,b,c"}' | norikra-client event send str_stream
+</span><span class='line'>$ echo '{"str":"a,b,c"}' | norikra-client event send str_stream
+</span><span class='line'>$ echo '{"str":"a,b,c"}' | norikra-client event send str_stream</span></code></pre></td></tr></table></div></figure>
+
+
+<p>と、こんな感じで同じようなレコードが重複して生成される. <code>count(*)</code>は正しくカウントされているのだが、GROUP BYしているので1レコードになってて欲しい.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ norikra-client event sweep
+</span><span class='line'>{"time":"2015/07/31 12:06:52","query":"splittest","str":"a,b,c","splitted":["a","b","c"],"cnt":3}
+</span><span class='line'>{"time":"2015/07/31 12:06:52","query":"splittest","str":"a,b,c","splitted":["a","b","c"],"cnt":3}
+</span><span class='line'>{"time":"2015/07/31 12:06:52","query":"splittest","str":"a,b,c","splitted":["a","b","c"],"cnt":3}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Norikraではなく、Esperで同じことを実験してみても発生するので、Esperの事象っぽい.<a href="http://www.espertech.com/esper/release-5.2.0/esper-reference/html/processingmodel.html">公式ドキュメント</a>の&#8221;3.7.2. Output for Aggregation and Group-By&#8221;を見ると、以下の様な記述がある。 GROUP BYの中に無いフィールドをSELECTすると、入力イベントと同じ数の出力イベントが発生するよ、という話.</p>
+
+<blockquote><p>If your statement selects non-aggregated properties and aggregation values, and groups only some properties using the group by clause, your statement may look as below:</p>
+
+<p> select account, accountName, sum(amount)
+from Withdrawal.win:time_batch(1 sec)
+group by account</p>
+
+<p>At the end of a time interval, the engine posts to listeners one row per event. The aggregation result aggregates per unique account.</p></blockquote>
+
+<p>とは言え、GROUP BYの中に<code>str.split(",")</code>を入れても同じ. 値は同じでも、Stringクラスのオブジェクトは別になってしまうからなのかなぁ. 一応、回避策としてはfirsteverという、イベントの中で最初の値だけを取る関数があるので、<code>firstever(str.split(","))</code>のようにすると1レコードに集約できた.</p>
+
+<p>Issueで聞いてみた.
+<a href="https://github.com/espertechinc/esper/issues/18">https://github.com/espertechinc/esper/issues/18</a></p>
+
+<p>若干うまく伝わらなかった気がするけど、javaメソッドではなく同等の機能を持つUDFを作ればうまくいくよ、ということらしい。実際、EsperのUDFを作ってみたら、ちゃんと集約された。</p>
+
+<p>ちなみに、EsperのUDFを作るのは簡単で、以下のようにstaticなメソッドを持つクラスを作って</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">MyUtilityClass</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">static</span> <span class="n">String</span><span class="o">[]</span> <span class="nf">split</span><span class="o">(</span><span class="n">String</span> <span class="n">str</span><span class="o">,</span> <span class="n">String</span> <span class="n">regex</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">str</span><span class="o">.</span><span class="na">split</span><span class="o">(</span><span class="n">regex</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ConfigurationクラスのaddPlugInSingleRowFunctionメソッドで、function名、クラス名、メソッド名を渡してやれば良い。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">addPlugInSingleRowFunction</span><span class="o">(</span><span class="s">&quot;split&quot;</span><span class="o">,</span> <span class="n">MyUtilityClass</span><span class="o">.</span><span class="na">class</span><span class="o">.</span><span class="na">getName</span><span class="o">(),</span> <span class="s">&quot;split&quot;</span><span class="o">);</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>まあ、都度UDF作るのも面倒なので、firsteverで回避出来る場合はそうするかなぁ.</p>
+
+<p>そんな話でした.</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -2457,226 +2566,9 @@
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/02/26/about-puppet-1/">Puppetを使っていて思ったことなどをまとめてみる</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-
-
-
-
-  
-
-
-<time datetime="2014-02-26T22:45:06+09:00" pubdate data-updated="true">Feb 26<span>th</span>, 2014</time>
-        
-           | <a href="/blog/2014/02/26/about-puppet-1/#disqus_thread"
-             data-disqus-identifier="http://ogibayashi.github.io/blog/2014/02/26/about-puppet-1/">Comments</a>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><h2>この記事について</h2>
-
-<p>puppetを初めて触ってから3,4年くらい経ったが、その間に思ったことなどをまとめてみる. なぜpuppetか、何に使っているか、使っていて思ったこと、課題など.</p>
-
-<h2>利用状況を簡単に</h2>
-
-<p>こんな環境で使ってます.</p>
-
-<h3>puppetの使用環境</h3>
-
-<p>CentOS 5 and 6で、puppetは2.7.21. 大体4つくらいの独立した(ネットワーク的に分断された)環境で、サーバ台数は合計百数十台. サーバ上で稼働する(した)ソフトウェアはHadoop, fluentd, MongoDB, Cassandra, MySQL, Munin等.</p>
-
-<h3>何に使っているか</h3>
-
-<p>上記ソフトウェアの環境は基本的にpuppetで構築している.が、puppetで完結できていることだけではないので、それは後述</p>
-
-<h2>使っていて思ったこと</h2>
-
-<p>今まで使っていて思ったことなどを書いてみる.</p>
-
-<h3>puppetで何が良いか</h3>
-
-<p>puppetだけではなく、chef等でも一緒だと思うけど、この手のソフトウェアを使わない場合だと、シェルスクリプトで頑張るか、VMのイメージをコピーするか、になると思う. それぞれに対して比較すると</p>
-
-<ul>
-<li>シェルスクリプト等でやる場合
-
-<ul>
-<li>色々全部自分で書かないといけないのでしんどい. 単一の環境、初回構築なら良いけど、ちょっと違う環境を作るとか、一旦作った環境に変更を加えるとか. 規模が大きくなってくると、モジュール化したり、過去に作ったものを再利用したくなるけど、その点でもつらい.</li>
-</ul>
-</li>
-<li>VMのイメージコピーの場合
-
-<ul>
-<li>既に構築済の環境に対する変更をどう適用するか、環境の変更履歴をどう管理するか、というところが課題.</li>
-</ul>
-</li>
-</ul>
-
-
-<p>puppetは、&#8221;このサーバはこうあるべき&#8221;と定義すれば、前の状態がどうであってもその状態にしてくれるので、いちいちチェックして、期待と違ったら処理をして、みたいなことを書かなくて済む. また、クラス、モジュール、等再利用性を促すような言語の機能もあるので、うまく書けば既存のコードを流用しつつ、新しい要件に対応するようにマニフェストを変更していくようなこともやりやすい.</p>
-
-<p>ただ、実はそれだけではなくてInfrastructure as Code, サーバ環境がコードで表現できるようになり、アプリケーションのコードと同じように変更管理、レビュー、テスト、デプロイができるようになるのが大きいと思う. このあたりは<a href="http://d.hatena.ne.jp/naoya/20131215/1387090668">naoyaさんの記事</a>に詳しく書かれている.</p>
-
-<h3>puppetの使いどころ</h3>
-
-<p>サーバ構築のうち、何をpuppetでやるべきか？サーバ構築はBootstrapping, Configuration, Orchestrationの3つのレイヤに分けて考えられることが多いが、この中だとConfigurationの部分をpuppetでやることが有効</p>
-
-<p>つまり、</p>
-
-<ul>
-<li>Bootstrappingに相当する部分、OSインストール、ネットワーク設定、puppet自体のインストール、はやらない(やれない)</li>
-<li>Orchestrationに相当する部分、複数台の協調操作が必要な操作もやらない. 今はここはfabric(局所的にserf)でやっている.</li>
-<li>その他、puppetが動作可能になった後のconfigurationで、単一サーバ内で完結するようなものは全てpuppetで行う.</li>
-</ul>
-
-
-<p>という感じにしている.</p>
-
-<h3>マニフェストのいい感じの書き方</h3>
-
-<p>いい感じ、というのは読みやすく、再利用しやすい、ということ. これは、使い始めてからずっと試行錯誤しているところ. そのための要素としては、以下があると思う.</p>
-
-<ol>
-<li>モジュールの書き方</li>
-<li>モジュールを組み合わせて、実際のサーバに適用するマニフェストにする部分をどう書くか</li>
-<li>環境依存する部分をどのように切り出すか</li>
-</ol>
-
-
-<p>まず、1について. モジュールはライブラリのように環境が変わっても再利用可能なものであるべき. どのような書き方が良いか、というのは<a href="http://docs.puppetlabs.com/guides/module_guides/bgtm.html">このドキュメント</a>に書かれている. puppetlabs公式のntpモジュールが、お手本としては良いらしい.</p>
-
-<p>2については、以下で紹介されている、RoleとProfileという考え方を導入するのが良い.</p>
-
-<ul>
-<li><a href="http://www.slideshare.net/PuppetLabs/roles-talk">http://www.slideshare.net/PuppetLabs/roles-talk</a></li>
-<li><a href="http://www.craigdunn.org/2012/05/239/">http://www.craigdunn.org/2012/05/239/</a></li>
-</ul>
-
-
-<p>moduleを複数まとめてprofileが構成され、さらに複数profileをまとめてroleが構成される. node(=物理ホスト)は、一つのroleに紐付けられる、という形になっている. 例えば、<code>profile::webserver</code>にはhttpdとphpが必要で、<code>role::www::dev</code>は、<code>profile::webserver</code>と<code>profile::database</code>が含まれる、みたいな形に書く. ただ、自分はまだroleの必要性がしっくりきてないので、profileとroleを分けていない.</p>
-
-<p>3については、hieraやENCを使ってあるサーバに適用するクラス(role/profile)や、そのパラメータをマニフェストの外に切り出す、というのが定番らしい. ただ、自分はまだこれらは導入していなくて、以下のように変数をまとめたクラスを作って、それを呼び出すときの引数で環境を切り替える、という風にしている. 今後はhiera or ENCに移行していきたい.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-<span class='line-number'>17</span>
-<span class='line-number'>18</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>class base_env($envname="") {
-</span><span class='line'>  case $envname {
-</span><span class='line'>    "testenv" :{
-</span><span class='line'>      $reposrv = "192.168.1.1"
-</span><span class='line'>      $repourl = "http://$reposrv/Lang/Ruby/"
-</span><span class='line'>    }
-</span><span class='line'>    default: {
-</span><span class='line'>      $masternode="192.168.1.2"
-</span><span class='line'>      $reposrv = "example.deploy.local"
-</span><span class='line'>      $repourl = "http://$reposrv/Lang/Ruby/"
-</span><span class='line'>      $gfurl="http://$masternode:5125"
-</span><span class='line'>      $munin_node=$masternode
-</span><span class='line'>      $serf_join = ['192.168.1.1','192.168.1.2']
-</span><span class='line'>      $munin_allow='^192\.168\..*$'
-</span><span class='line'>
-</span><span class='line'>    }
-</span><span class='line'>  }
-</span><span class='line'>}
-</span></code></pre></td></tr></table></div></figure>
-
-
-
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>class profile::base($envname="") {
-</span><span class='line'>  class{"base_env":
-</span><span class='line'>    envname =&gt; $envname
-</span><span class='line'>  }
-</span><span class='line'>  ...
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>node /hadooptest\.hadoop.local/ {
-</span><span class='line'>   class{"profile::base":
-</span><span class='line'>     envname =&gt; "testenv"
-</span><span class='line'>   }
-</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
-
-
-<h3>puppetmasterについて</h3>
-
-<p>つい最近まではpuppetmasterを使っていた. ただ、以下の問題があった.</p>
-
-<ul>
-<li>新しくサーバを構築するときにpuppetmasterが無ければ立てる必要がある</li>
-<li>証明書が面倒. 自動署名にはしてるけど、同じホスト名でサーバの再構築することもそれなりにあったので、その度に証明書のクリアが必要. クリアしてなくてうまく同期できない、というのも良くあった.</li>
-</ul>
-
-
-<p>なので、最近はgitリポジトリにmanifestを配置して、各サーバでgit clone. という風にしている. マニフェストを更新した時は、fabricを使って並列にgit pull &amp; puppet applyする. 証明書の問題から開放されたし、サーバ台数が増えてもgitリポジトリを複数にすればスケールするし、gitが無くてもmanifestだけコピーすれば環境作れるし、でとても楽になった.</p>
-
-<h2>今後の課題</h2>
-
-<p>今はできていないので、これから取り組みたいこと.</p>
-
-<h3>テスト</h3>
-
-<p>上記の通り、puppet化、というかコード化するメリットとしてCI的なものは外せないと思うのだけど、まだできていない.
-幸い<a href="http://blog.tmtk.net/2013/09/28/docker-jenkins-serverspec-puppet.ja.html">先人の事例</a>があるので、こちらを真似しながら環境はできた. ただ、まだ実験的な段階で、プロセスとして固まってない. Dockerだけでなく実機の環境もあるので、Dockerでテストして、通ったものは即検証環境に自動的にデプロイして、みたいな形にしたい.</p>
-
-<h3>外部モジュール(Puppet Forge)の利用</h3>
-
-<p>puppetを始めた当初は、公開されているモジュールがあると言っても今一つやりたいことにフィットしなくて、全て自分で書いていたのだけど、最近は公開されているものを有効活用した方が良い気がしてきた. 実際serfとかsensuとかのモジュールを使ってみたが、全然変更の必要が無く使えたので、これからは外部のものも使っていきたい. ただ、自分のいる環境はInternetにつながらないので<code>puppet module</code>コマンドは使えず、どうやって配布するかを考えないといけない. (自前リポジトリとか立てられるのかな&hellip;)</p>
-
-<h2>最後に</h2>
-
-<p>最近Infrastructure as Codeという言葉も良く聞かれるようになったし、自分も今までpuppetを使ってて思ったことを一度まとめてみようと思って書いてみた. しかし、puppetってやっぱり日本語の記事が少ない. 入門的な記事はあるのだけど、どう使ってるとか、何に困ったとか、どう工夫してるとかの情報がもっとあると良いなぁ. Qiitaでそれぞれのタグを見てみたら、Chefの投稿が242に対して、Puppetは11でした&hellip;</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
+    
+      <a class="prev" href="/blog/page/2/">&larr; Older</a>
     
     <a href="/blog/archives">Blog Archives</a>
     
@@ -2687,6 +2579,10 @@
     <section>
   <h1>Recent Posts</h1>
   <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2015/08/13/esper-and-java-method/">EsperのEPLでjava methodとGROUP Byを使ったらレコードが重複した話</a>
+      </li>
     
       <li class="post">
         <a href="/blog/2015/03/24/code-reading-of-fluentd-v0-dot-12-filter-and-label-related/">FluentdのFilter&Label周りのコードを読んだメモ</a>
@@ -2704,15 +2600,11 @@
         <a href="/blog/2015/01/06/hdp2-dot-2-installation-memo/">HDP2.2をセットアップするためにハマった箇所のメモ</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2014/12/16/try-fluentd-v0-dot-12-at-least-once/">Fluentd v0.12のAt-least-once Semanticsを試す</a>
-      </li>
-    
   </ul>
 </section>
 <section>
   <h1>Categories</h1>
-    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (2)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li></ul>
+    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/esper'>Esper (1)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (2)</a></li><li><a href='/blog/categories/norikra'>Norikra (1)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li></ul>
 </section>
 
   
