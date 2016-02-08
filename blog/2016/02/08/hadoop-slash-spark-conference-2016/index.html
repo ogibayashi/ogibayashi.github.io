@@ -1,0 +1,250 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Hadoop / Spark Conference Japan 2016 に行ってきた - Tech Notes</title>
+  <meta name="author" content="OGIBAYASHI Hironori">
+
+  
+  <meta name="description" content="行ってきた。本当はストリーム処理をする上でのSparkってどうよ、的なあたりを聞きたかったのだけど、気がついたらHadoop周りの話題を多く聞いていたように思う。後で資料が公開されたら、行くことができなかったセッションの内容も見ておきたい。 以下、思ったことなどをつらつらと書いてみる。 ひとつ目は &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://ogibayashi.github.io/blog/2016/02/08/hadoop-slash-spark-conference-2016">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="Tech Notes" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">Tech Notes</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:ogibayashi.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Hadoop / Spark Conference Japan 2016 に行ってきた</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-02-08T19:55:02+09:00" pubdate data-updated="true">Feb 8<span>th</span>, 2016</time>
+        
+           | <a href="#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>行ってきた。本当はストリーム処理をする上でのSparkってどうよ、的なあたりを聞きたかったのだけど、気がついたらHadoop周りの話題を多く聞いていたように思う。後で資料が公開されたら、行くことができなかったセッションの内容も見ておきたい。</p>
+
+<p>以下、思ったことなどをつらつらと書いてみる。</p>
+
+<p>ひとつ目は、これからはCPUをどうするかというのが大きい課題なのかなぁ、ということ。Sparkの、Project Tungstenの話の中でも出てきたけど、ハードウェアの進化という面だと、ディスクはSSDが普及してきたし、ネットワークは10Gbpsになってきたし、メモリは安価・大容量になったけど、CPUは劇的に速くなっていない。分散処理とか、GPUを使うとか、CPUの集積度を上げる、とかしていっても、最後には消費電力という課題が残る。数年前まではディスクI/Oがボトルネックで、これをどうするか、的な感じだったけど、その辺がある程度解決してきたのと、機械学習周りの普及で、今はCPUをいかに効率よく回すか、ということが重要になってきているのだなぁ、というのを感じた。</p>
+
+<p>Sparkについては、懇親会の中で少し聞いたところだと、他の人が踏み固めた道を歩く分には割と大丈夫、という感じらしい。一般的なユースケースと違う使い方をしたり、リソース的にシビアだったりすると辛いのかな、と。これはSparkに限らない気はするけど。挙動が分かりやすいとか、今どうなっているのかが把握しやすいとか、再起動のしやすさとかの、運用の容易さは重要だよな、と思ったけど、そこは実際に動かしてみないとわからなそうだな。使っている人たちにもう少し詳しく聞けばよかった、というのは反省。</p>
+
+<p>Hadoopは、まあ成熟している印象。使っていて大変だった系の話としては、Yahooさんの数百ノードまでスケールさせた時にHive MetastoreとかYARN Resource Managerに負荷が集中し話とか、Softbankさんの、オンプレでサーバの物理的な構築とか、故障対応のオペレーションの話があった。自分のところでも使っているけど、そこそこ余裕のある構成で組んで、普通に集計で使用している分には問題ないなあ、と思う。構築・運用周りも前は自分でがんばってたけど、Ambariを使い始めてから大分楽になった。もちろん、Hadoop自体が停滞しているわけではなくてYARNもHDFSもHiveも改善されて性能が上がったり、使いやすくなったりはしているわけで、それは使っている身としてはとてもありがたい。</p>
+
+<p>あと、本題とは関係ないけど、懇親会の中で同僚と話していて、日頃仕事でやっていることとか、公開できる範囲でブログに書いて世の中に共有することは大事だよね、という話になった。自分もそういう記事に多分にお世話になっているので。ということで、まずは忘れないうちにこの記事を書いておこう、と思った次第です。</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">OGIBAYASHI Hironori</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-02-08T19:55:02+09:00" pubdate data-updated="true">Feb 8<span>th</span>, 2016</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/hadoop/'>Hadoop</a>, <a class='category' href='/blog/categories/spark/'>Spark</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://ogibayashi.github.io/blog/2016/02/08/hadoop-slash-spark-conference-2016/" data-via="" data-counturl="http://ogibayashi.github.io/blog/2016/02/08/hadoop-slash-spark-conference-2016/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2015/07/18/a-record-of-my-job-change/" title="Previous Post: 転職して3ヶ月が経ったので、振り返ってみる">&laquo; 転職して3ヶ月が経ったので、振り返ってみる</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+  <section>
+    <h1>Comments</h1>
+    <div id="disqus_thread" aria-live="polite"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+</div>
+  </section>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/02/08/hadoop-slash-spark-conference-2016/">Hadoop / Spark Conference Japan 2016 に行ってきた</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/18/a-record-of-my-job-change/">転職して3ヶ月が経ったので、振り返ってみる</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/03/24/code-reading-of-fluentd-v0-dot-12-filter-and-label-related/">FluentdのFilter&Label周りのコードを読んだメモ</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/02/28/incompatible-character-encodings-in-fluentd/">Fluentdで Incompatible Character Encodingのエラーが出た話</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/01/27/hdp2-dot-2-resoruce-manager-could-not-transition-to-active/">HDP2.2でResourceManagerが両系standbyになった事象</a>
+      </li>
+    
+  </ul>
+</section>
+<section>
+  <h1>Categories</h1>
+    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (3)</a></li><li><a href='/blog/categories/misc'>misc (1)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li><li><a href='/blog/categories/spark'>Spark (1)</a></li></ul>
+</section>
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2016 - OGIBAYASHI Hironori -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+<script type="text/javascript">
+      var disqus_shortname = 'technotes-ogibayashi';
+      
+        
+        // var disqus_developer = 1;
+        var disqus_identifier = 'http://ogibayashi.github.io/blog/2016/02/08/hadoop-slash-spark-conference-2016/';
+        var disqus_url = 'http://ogibayashi.github.io/blog/2016/02/08/hadoop-slash-spark-conference-2016/';
+        var disqus_script = 'embed.js';
+      
+    (function () {
+      var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+      dsq.src = '//' + disqus_shortname + '.disqus.com/' + disqus_script;
+      (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    }());
+</script>
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

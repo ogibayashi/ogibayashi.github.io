@@ -9,7 +9,7 @@
   <meta name="author" content="OGIBAYASHI Hironori">
 
   
-  <meta name="description" content="この記事について puppetを初めて触ってから3,4年くらい経ったが、その間に思ったことなどをまとめてみる. なぜpuppetか、何に使っているか、使っていて思ったこと、課題など. 利用状況を簡単に こんな環境で使ってます. puppetの使用環境 CentOS 5 and 6で、 &hellip;">
+  <meta name="description" content="Fluentdが障害の時にどのような動作をするのか調べてみたので、そのメモ. td-agent 1.1.17(fluentd v0.10.39)で確認したつもりだが、もしかしたらもう少し新しいので確認したケースもあるかも. BufferedOutputを中心に記載している. &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -63,6 +63,250 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/06/04/how-fluentd-works-in-case-of-failures/">Fluentdの障害時動作</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-06-04T23:12:23+09:00" pubdate data-updated="true">Jun 4<span>th</span>, 2014</time>
+        
+           | <a href="/blog/2014/06/04/how-fluentd-works-in-case-of-failures/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2014/06/04/how-fluentd-works-in-case-of-failures/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>Fluentdが障害の時にどのような動作をするのか調べてみたので、そのメモ. td-agent 1.1.17(fluentd v0.10.39)で確認したつもりだが、もしかしたらもう少し新しいので確認したケースもあるかも. BufferedOutputを中心に記載している.</p>
+
+<h2>BufferdOutputの基本</h2>
+
+<p>fluentdの特徴の一つとして、fluentd送信先で障害があり、メッセージが送れなかった場合は大抵(BufferedOutputを使っているプラグインであれば)fluentdでバッファリングし、一定時間後に再送してくれる.</p>
+
+<p>このバッファリングのサイズは、BufferedOutputプラグインのbuffer_chunk_limit*buffer_queue_limitで決まる.</p>
+
+<p>これらのデフォルト値は以下に解説付きでまとまっている. (良く参照させて頂いています)
+<a href="http://d.hatena.ne.jp/tagomoris/20130123/1358929254">FluentdでバッファつきOutputPluginを使うときのデフォルト値</a></p>
+
+<h2>何回くらいリトライするの？ リトライの間隔は？</h2>
+
+<p>リトライの回数は、retry_limit(デフォルト 17)で指定された回数まで. 間隔は一定ではなく、段々延びていく. 具体的に間隔を計算してるのは、BufferedOutput#calc_retry_wait.</p>
+
+<p>リトライ間隔は、以下のパラメータでコントロールすることができる</p>
+
+<ul>
+<li>max_retry_wait(デフォルト: nil = 上限なし)</li>
+<li>retry_wait (デフォルト: 1.0)</li>
+</ul>
+
+
+<p>同じメソッドを使って、実際にどれくらいになるのかを計算させてみた. 以下で例えば、1=>2は、一度送信に失敗してから、2回目の送信を試みるまでという意味. 単位は秒. 全てデフォルト値だと、以下の様な感じ. 最大だと、33765秒=9時間22分になる.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1=&gt;2 : 1.0799124443510373
+</span><span class='line'>2=&gt;3 : 1.8141315928054327
+</span><span class='line'>3=&gt;4 : 3.5115188260172046
+</span><span class='line'>4=&gt;5 : 7.106397160810471
+</span><span class='line'>5=&gt;6 : 14.175590112052593
+</span><span class='line'>6=&gt;7 : 31.434005639868758
+</span><span class='line'>7=&gt;8 : 68.4743252224448
+</span><span class='line'>8=&gt;9 : 116.47949944913451
+</span><span class='line'>9=&gt;10 : 279.97276701667636
+</span><span class='line'>10=&gt;11 : 487.69976826480445
+</span><span class='line'>11=&gt;12 : 909.7729519328531
+</span><span class='line'>12=&gt;13 : 2125.0559803853725
+</span><span class='line'>13=&gt;14 : 3717.0255349933364
+</span><span class='line'>14=&gt;15 : 8658.913465429461
+</span><span class='line'>15=&gt;16 : 18189.354025481873
+</span><span class='line'>16=&gt;17 : 33765.98470398931
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>例えば、max_retry_wait=120とすると、以下のようになる. 何回リトライしても、リトライ間隔の上限はmax_retry_waitまでになる.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1=&gt;2 : 1.0717022666140232
+</span><span class='line'>2=&gt;3 : 1.9866738239982864
+</span><span class='line'>3=&gt;4 : 3.9258714996769903
+</span><span class='line'>4=&gt;5 : 7.002702902759963
+</span><span class='line'>5=&gt;6 : 15.817343449261045
+</span><span class='line'>6=&gt;7 : 34.49173945537066
+</span><span class='line'>7=&gt;8 : 65.98469012616731
+</span><span class='line'>8=&gt;9 : 120
+</span><span class='line'>9=&gt;10 : 120
+</span><span class='line'>10=&gt;11 : 120
+</span><span class='line'>11=&gt;12 : 120
+</span><span class='line'>12=&gt;13 : 120
+</span><span class='line'>13=&gt;14 : 120
+</span><span class='line'>14=&gt;15 : 120
+</span><span class='line'>15=&gt;16 : 120
+</span><span class='line'>16=&gt;17 : 120
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>retry_waitを半分の0.5にすると、全てのリトライ間隔が半分になる.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1=&gt;2 : 0.46442639898905974
+</span><span class='line'>2=&gt;3 : 0.9688421553729557
+</span><span class='line'>3=&gt;4 : 2.2291735347851613
+</span><span class='line'>4=&gt;5 : 3.545406346443683
+</span><span class='line'>5=&gt;6 : 7.824124603156501
+</span><span class='line'>6=&gt;7 : 17.564462446502926
+</span><span class='line'>7=&gt;8 : 30.97024814321994
+</span><span class='line'>8=&gt;9 : 71.84343582620227
+</span><span class='line'>9=&gt;10 : 127.87010583643446
+</span><span class='line'>10=&gt;11 : 286.751861977861
+</span><span class='line'>11=&gt;12 : 551.32668884554
+</span><span class='line'>12=&gt;13 : 1077.2785515357239
+</span><span class='line'>13=&gt;14 : 2095.196745718026
+</span><span class='line'>14=&gt;15 : 3995.080966184667
+</span><span class='line'>15=&gt;16 : 9131.408473518048
+</span><span class='line'>16=&gt;17 : 16810.484835714517
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>リトライの頻度を増やす(リトライ間隔を減らす)場合は、併せてretry_limitも変更しないと、早々にリトライアウトしてしまう、ということになるので注意.</p>
+
+<h2>リトライ回数が超過したら？</h2>
+
+<p>リトライ回数を超過した場合、secodaryディレクティブを指定しておけば、そちらに出力される. 通常は、ファイルに出力しておいて、後からリカバリに使う、というケースが多いと思う.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  &lt;secondary&gt;
+</span><span class='line'>    type file
+</span><span class='line'>    path /path/to/forward-failed
+</span><span class='line'>  &lt;/secondary&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>このようなケースでは、ログに以下のように出力される</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2014-06-22 07:06:40 +0900 [warn]: fluent/output.rb:352:rescue in try_flush: retry count exceededs limit. falling back to secondary output.
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>キューが溢れたら？</h2>
+
+<p>キュー(バッファ)が溢れると、fluentdのログに以下のようなメッセージが出る.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2014-05-25 11:30:23 +0900 [warn]: fluent/engine.rb:149:rescue in emit_stream: emit transaction failed  error_class=Fluent::BufferQueueLimitError error=#&lt;Fluent::BufferQueueLimitError: queue size exceeds limit&gt;
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>この場合、inputプラグインがEngine.emitを実行する際にExceptionが発生する. プラグインが、これをrescueしていない場合、inputプラグインは停止する. rescueしている場合はinputプラグインの実装次第だが、大抵Exceptionは無視されてemitしたデータは破棄される.
+(既に溜めるためのキューがあふれているので、それしか無い)</p>
+
+<h2>送信先が復活したら?</h2>
+
+<p>再送中に送信先が復活し、再送に成功した場合は以下の様なメッセージが出力される.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2014-05-25 11:33:01 +0900 [warn]: fluent/output.rb:312:try_flush: retry succeeded. instance=70365422937420</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ここで、注意点として送信先が復活してもすぐに再送してくれるわけではない. これは、送信先とのハートビートを行っているout_forwardでも一緒. BufferedOutput#try_flushのコードを見ると分かるが、リトライ中で、まだ次のリトライ時刻に達していない場合は、送信は行わない.</p>
+
+<p>なので、retryを繰り返して再送間隔が延びている場合は、次の再送タイミングになるまでキューが溜まり続ける(もしくは、既に溢れている場合は溢れ続ける)</p>
+
+<h2>キューを強制的に送信することはできないの？</h2>
+
+<p>v0.10.59以前の場合 → リトライ中の場合以外であれば、fluentdのプロセスにSIGUSR1を送ることでキューが吐き出される. リトライ中の場合は、次のリトライタイミングまでは送信されない.全てのキューを吐き出すには、プロセスを停止するしかない.</p>
+
+<p>v0.10.59以降の場合 → リトライ中の場合含め、fluentdのプロセスにSIGUSR1を送ることでキューが吐き出される. (2014/4/4追記: @sonotsさんに頂いたコメントを反映しました)</p>
+
+<p>プロセス停止時の挙動は使用しているバッファプラグインによって異なるが</p>
+
+<ul>
+<li>buf_memoryの場合
+
+<ul>
+<li>プロセス停止時に全てのキューが吐き出される.</li>
+</ul>
+</li>
+<li>buf_fileの場合
+
+<ul>
+<li>flush_at_shutdownがtrue(デフォルト false)の場合のみ、プロセス停止時に全てのキューが吐き出される.</li>
+</ul>
+</li>
+</ul>
+
+
+<p>長くなったのでここまで.</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -298,7 +542,11 @@
   <ul id="recent_posts">
     
       <li class="post">
-        <a href="/blog/2015/08/13/esper-and-java-method/">EsperのEPLでjava methodとGROUP Byを使ったらレコードが重複した話</a>
+        <a href="/blog/2016/02/08/hadoop-slash-spark-conference-2016/">Hadoop / Spark Conference Japan 2016 に行ってきた</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/18/a-record-of-my-job-change/">転職して3ヶ月が経ったので、振り返ってみる</a>
       </li>
     
       <li class="post">
@@ -313,15 +561,11 @@
         <a href="/blog/2015/01/27/hdp2-dot-2-resoruce-manager-could-not-transition-to-active/">HDP2.2でResourceManagerが両系standbyになった事象</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2015/01/06/hdp2-dot-2-installation-memo/">HDP2.2をセットアップするためにハマった箇所のメモ</a>
-      </li>
-    
   </ul>
 </section>
 <section>
   <h1>Categories</h1>
-    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/esper'>Esper (1)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (2)</a></li><li><a href='/blog/categories/norikra'>Norikra (1)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li></ul>
+    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (3)</a></li><li><a href='/blog/categories/misc'>misc (1)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li><li><a href='/blog/categories/spark'>Spark (1)</a></li></ul>
 </section>
 
   
@@ -330,7 +574,7 @@
     </div>
   </div>
   <footer role="contentinfo"><p>
-  Copyright &copy; 2015 - OGIBAYASHI Hironori -
+  Copyright &copy; 2016 - OGIBAYASHI Hironori -
   <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
 </p>
 

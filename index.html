@@ -9,8 +9,7 @@
   <meta name="author" content="OGIBAYASHI Hironori">
 
   
-  <meta name="description" content="Norikraで以下の様な感じの、GROUP BYして、SELECTの中でjavaメソッドを使うようなクエリを登録していたのだけど、なんか生成されるイベントが多い、というのが発端で調べてみた. 1
-SELECT str, str.split(",") as splitted, count(*) &hellip;">
+  <meta name="description" content="行ってきた。本当はストリーム処理をする上でのSparkってどうよ、的なあたりを聞きたかったのだけど、気がついたらHadoop周りの話題を多く聞いていたように思う。後で資料が公開されたら、行くことができなかったセッションの内容も見ておきたい。 以下、思ったことなどをつらつらと書いてみる。 ひとつ目は &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -70,7 +69,7 @@ SELECT str, str.split(",") as splitted, count(*) &hellip;">
       
   <header>
     
-      <h1 class="entry-title"><a href="/blog/2015/08/13/esper-and-java-method/">EsperのEPLでjava methodとGROUP Byを使ったらレコードが重複した話</a></h1>
+      <h1 class="entry-title"><a href="/blog/2016/02/08/hadoop-slash-spark-conference-2016/">Hadoop / Spark Conference Japan 2016 に行ってきた</a></h1>
     
     
       <p class="meta">
@@ -86,86 +85,104 @@ SELECT str, str.split(",") as splitted, count(*) &hellip;">
   
 
 
-<time datetime="2015-08-13T10:19:29+09:00" pubdate data-updated="true">Aug 13<span>th</span>, 2015</time>
+<time datetime="2016-02-08T19:55:02+09:00" pubdate data-updated="true">Feb 8<span>th</span>, 2016</time>
         
-           | <a href="/blog/2015/08/13/esper-and-java-method/#disqus_thread"
-             data-disqus-identifier="http://ogibayashi.github.io/blog/2015/08/13/esper-and-java-method/">Comments</a>
+           | <a href="/blog/2016/02/08/hadoop-slash-spark-conference-2016/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2016/02/08/hadoop-slash-spark-conference-2016/">Comments</a>
         
       </p>
     
   </header>
 
 
-  <div class="entry-content"><p>Norikraで以下の様な感じの、GROUP BYして、SELECTの中でjavaメソッドを使うようなクエリを登録していたのだけど、なんか生成されるイベントが多い、というのが発端で調べてみた.</p>
+  <div class="entry-content"><p>行ってきた。本当はストリーム処理をする上でのSparkってどうよ、的なあたりを聞きたかったのだけど、気がついたらHadoop周りの話題を多く聞いていたように思う。後で資料が公開されたら、行くことができなかったセッションの内容も見ておきたい。</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>SELECT str, str.split(",") as splitted, count(*) as cnt FROM str_stream.win:time_batch(10 sec) GROUP BY str</span></code></pre></td></tr></table></div></figure>
+<p>以下、思ったことなどをつらつらと書いてみる。</p>
 
+<p>ひとつ目は、これからはCPUをどうするかというのが大きい課題なのかなぁ、ということ。Sparkの、Project Tungstenの話の中でも出てきたけど、ハードウェアの進化という面だと、ディスクはSSDが普及してきたし、ネットワークは10Gbpsになってきたし、メモリは安価・大容量になったけど、CPUは劇的に速くなっていない。分散処理とか、GPUを使うとか、CPUの集積度を上げる、とかしていっても、最後には消費電力という課題が残る。数年前まではディスクI/Oがボトルネックで、これをどうするか、的な感じだったけど、その辺がある程度解決してきたのと、機械学習周りの普及で、今はCPUをいかに効率よく回すか、ということが重要になってきているのだなぁ、というのを感じた。</p>
 
-<p>上記のクエリを登録した状態で、以下のようにイベントを投入する.</p>
+<p>Sparkについては、懇親会の中で少し聞いたところだと、他の人が踏み固めた道を歩く分には割と大丈夫、という感じらしい。一般的なユースケースと違う使い方をしたり、リソース的にシビアだったりすると辛いのかな、と。これはSparkに限らない気はするけど。挙動が分かりやすいとか、今どうなっているのかが把握しやすいとか、再起動のしやすさとかの、運用の容易さは重要だよな、と思ったけど、そこは実際に動かしてみないとわからなそうだな。使っている人たちにもう少し詳しく聞けばよかった、というのは反省。</p>
 
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ echo '{"str":"a,b,c"}' | norikra-client event send str_stream
-</span><span class='line'>$ echo '{"str":"a,b,c"}' | norikra-client event send str_stream
-</span><span class='line'>$ echo '{"str":"a,b,c"}' | norikra-client event send str_stream</span></code></pre></td></tr></table></div></figure>
+<p>Hadoopは、まあ成熟している印象。使っていて大変だった系の話としては、Yahooさんの数百ノードまでスケールさせた時にHive MetastoreとかYARN Resource Managerに負荷が集中し話とか、Softbankさんの、オンプレでサーバの物理的な構築とか、故障対応のオペレーションの話があった。自分のところでも使っているけど、そこそこ余裕のある構成で組んで、普通に集計で使用している分には問題ないなあ、と思う。構築・運用周りも前は自分でがんばってたけど、Ambariを使い始めてから大分楽になった。もちろん、Hadoop自体が停滞しているわけではなくてYARNもHDFSもHiveも改善されて性能が上がったり、使いやすくなったりはしているわけで、それは使っている身としてはとてもありがたい。</p>
 
-
-<p>と、こんな感じで同じようなレコードが重複して生成される. <code>count(*)</code>は正しくカウントされているのだが、GROUP BYしているので1レコードになってて欲しい.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ norikra-client event sweep
-</span><span class='line'>{"time":"2015/07/31 12:06:52","query":"splittest","str":"a,b,c","splitted":["a","b","c"],"cnt":3}
-</span><span class='line'>{"time":"2015/07/31 12:06:52","query":"splittest","str":"a,b,c","splitted":["a","b","c"],"cnt":3}
-</span><span class='line'>{"time":"2015/07/31 12:06:52","query":"splittest","str":"a,b,c","splitted":["a","b","c"],"cnt":3}</span></code></pre></td></tr></table></div></figure>
+<p>あと、本題とは関係ないけど、懇親会の中で同僚と話していて、日頃仕事でやっていることとか、公開できる範囲でブログに書いて世の中に共有することは大事だよね、という話になった。自分もそういう記事に多分にお世話になっているので。ということで、まずは忘れないうちにこの記事を書いておこう、と思った次第です。</p>
+</div>
+  
+  
 
 
-<p>Norikraではなく、Esperで同じことを実験してみても発生するので、Esperの事象っぽい.<a href="http://www.espertech.com/esper/release-5.2.0/esper-reference/html/processingmodel.html">公式ドキュメント</a>の&#8221;3.7.2. Output for Aggregation and Group-By&#8221;を見ると、以下の様な記述がある。 GROUP BYの中に無いフィールドをSELECTすると、入力イベントと同じ数の出力イベントが発生するよ、という話.</p>
-
-<blockquote><p>If your statement selects non-aggregated properties and aggregation values, and groups only some properties using the group by clause, your statement may look as below:</p>
-
-<p> select account, accountName, sum(amount)
-from Withdrawal.win:time_batch(1 sec)
-group by account</p>
-
-<p>At the end of a time interval, the engine posts to listeners one row per event. The aggregation result aggregates per unique account.</p></blockquote>
-
-<p>とは言え、GROUP BYの中に<code>str.split(",")</code>を入れても同じ. 値は同じでも、Stringクラスのオブジェクトは別になってしまうからなのかなぁ. 一応、回避策としてはfirsteverという、イベントの中で最初の値だけを取る関数があるので、<code>firstever(str.split(","))</code>のようにすると1レコードに集約できた.</p>
-
-<p>Issueで聞いてみた.
-<a href="https://github.com/espertechinc/esper/issues/18">https://github.com/espertechinc/esper/issues/18</a></p>
-
-<p>若干うまく伝わらなかった気がするけど、javaメソッドではなく同等の機能を持つUDFを作ればうまくいくよ、ということらしい。実際、EsperのUDFを作ってみたら、ちゃんと集約された。</p>
-
-<p>ちなみに、EsperのUDFを作るのは簡単で、以下のようにstaticなメソッドを持つクラスを作って</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">MyUtilityClass</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="kd">static</span> <span class="n">String</span><span class="o">[]</span> <span class="nf">split</span><span class="o">(</span><span class="n">String</span> <span class="n">str</span><span class="o">,</span> <span class="n">String</span> <span class="n">regex</span><span class="o">){</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">str</span><span class="o">.</span><span class="na">split</span><span class="o">(</span><span class="n">regex</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/07/18/a-record-of-my-job-change/">転職して3ヶ月が経ったので、振り返ってみる</a></h1>
+    
+    
+      <p class="meta">
+        
 
 
-<p>ConfigurationクラスのaddPlugInSingleRowFunctionメソッドで、function名、クラス名、メソッド名を渡してやれば良い。</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">addPlugInSingleRowFunction</span><span class="o">(</span><span class="s">&quot;split&quot;</span><span class="o">,</span> <span class="n">MyUtilityClass</span><span class="o">.</span><span class="na">class</span><span class="o">.</span><span class="na">getName</span><span class="o">(),</span> <span class="s">&quot;split&quot;</span><span class="o">);</span>
-</span></code></pre></td></tr></table></div></figure>
 
 
-<p>まあ、都度UDF作るのも面倒なので、firsteverで回避出来る場合はそうするかなぁ.</p>
 
-<p>そんな話でした.</p>
+
+
+
+  
+
+
+<time datetime="2015-07-18T21:46:37+09:00" pubdate data-updated="true">Jul 18<span>th</span>, 2015</time>
+        
+           | <a href="/blog/2015/07/18/a-record-of-my-job-change/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2015/07/18/a-record-of-my-job-change/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>2015年の4月に、新卒で入社して依頼15年務めた会社を辞めて今の会社に転職した。3ヶ月経ったので、一度振り返ってみようと思う。(15年、と言っても正確には会社側が買収などで変わったり、それに伴う転籍はあったのだけど)
+もしこのページを読む人がいたら、チラシの裏だと思ってください。</p>
+
+<h2>自分について</h2>
+
+<p>元通信事業者の情報システム部門勤務。直近数年はHadoopなどOSSを使った基盤の設計、構築、運用をメインでやっていた。で、縁があり所謂web系/インターネットサービス系の企業にエンジニアとして転職。</p>
+
+<h2>なぜ転職したか</h2>
+
+<p>直近1年くらい悩んでいたものはあって、
+* エンジニアとしてやっていきたい、が、仕事をしていてそれ以外で費やされる時間が多すぎる. (実稼働時間の50%以上が会議とか。システム部門の中でも何かと資料作りが多くて大変とか)
+* エンジニアとして、社内で評価されるための方向性が見えなくなっていた</p>
+
+<pre><code>* 技術に詳しくない人の方が多いので、やったことを理解してもらうのに労力が結構かかる。
+* 解はあったのだろうけど。
+</code></pre>
+
+<p>要は、技術力を使ってモノを作ったり、問題解決したりする、ということに時間を使いたかったのだけど、それ以外にかける時間と労力が多くて、これは良くないな、と思っていた。そんな中、有名なエンジニアも多く在籍している今の会社の人と話す機会があり、ちょうど必要とされているスキルセットと自分の経験が合っていた、そして話を聞いていて働きやすそうだな、と思った。で、後は面接したら幸い通して頂けたので、転職することにした、という経緯。</p>
+
+<p>あとは、ずっと転職というものをせずに来ていたので、一度違う会社に移る、ということを経験しておかないと、これから先ますます動けなくなりそうだな、というのもあった。</p>
+
+<h2>3ヶ月経ってみて、どうだったか</h2>
+
+<p>結論としては、とても良い。良いと思った点を箇条書きにしてみる。勤めている会社によっては、当たり前じゃん？ってものも多いかも。</p>
+
+<ul>
+<li>何より、自分の仕事に使える時間が増えた。以前は会議や、人との会話で時間が分断され、なかなかまとまったことができないでいた。が、できるようになった。その理由としては、チャットが大きいように思う。</li>
+<li>コミュニケーションのインフラが整っている。特にチャットは素晴らしい。頻繁に関係者と情報共有できるし、会ったことのない人と会話するのも楽だし。もはや無いのは考えられない。その他にもGithub EnterpriseとかConfluenceとか、JIRAとか。エンジニアがやりやすいように整備がされていて、素晴らしい。</li>
+<li>社内だけでなく、社外に役に立つことも評価される。例えば、何かソフトウェアを書いて、それが社外で便利に使われていれば、それは評価される。(らしい。まだ実際に評価を受けていないので)</li>
+<li>周囲のエンジニアのレベルが高い。学べることが多い。ただ、これはプレッシャーでもある。</li>
+<li>PC環境。入社の段階で複数の選択肢から選べる。自分はMBP15インチ+サブディスプレイを選択。</li>
+<li>就業時間中に横になって休めるスペースがある。疲れた時に、ちゃんとした休憩を取れることは重要。</li>
+<li>服装と勤怠がゆるい。ちゃんと仕事をしていれば良い。</li>
+</ul>
+
+
+<h2>これから</h2>
+
+<p>ということで、環境としてはとても良い。今までやりたい、と思っていたことに時間を使えるようになった。一方で、言い訳ができなくなった分、能力不足をより強く感じるところもあるし、そもそも40歳を迎えた後、どんな価値を提供していこう、というのは残ったままだ。まあ、その辺は転職して解決するものではないので、今の環境で、ちゃんと仕事をしていれば何らかの答えは見えるのかな、と思っている。</p>
 </div>
   
   
@@ -2322,250 +2339,6 @@ group by account</p>
 
     </article>
   
-  
-    <article>
-      
-  <header>
-    
-      <h1 class="entry-title"><a href="/blog/2014/06/04/how-fluentd-works-in-case-of-failures/">Fluentdの障害時動作</a></h1>
-    
-    
-      <p class="meta">
-        
-
-
-
-
-
-
-
-
-  
-
-
-<time datetime="2014-06-04T23:12:23+09:00" pubdate data-updated="true">Jun 4<span>th</span>, 2014</time>
-        
-           | <a href="/blog/2014/06/04/how-fluentd-works-in-case-of-failures/#disqus_thread"
-             data-disqus-identifier="http://ogibayashi.github.io/blog/2014/06/04/how-fluentd-works-in-case-of-failures/">Comments</a>
-        
-      </p>
-    
-  </header>
-
-
-  <div class="entry-content"><p>Fluentdが障害の時にどのような動作をするのか調べてみたので、そのメモ. td-agent 1.1.17(fluentd v0.10.39)で確認したつもりだが、もしかしたらもう少し新しいので確認したケースもあるかも. BufferedOutputを中心に記載している.</p>
-
-<h2>BufferdOutputの基本</h2>
-
-<p>fluentdの特徴の一つとして、fluentd送信先で障害があり、メッセージが送れなかった場合は大抵(BufferedOutputを使っているプラグインであれば)fluentdでバッファリングし、一定時間後に再送してくれる.</p>
-
-<p>このバッファリングのサイズは、BufferedOutputプラグインのbuffer_chunk_limit*buffer_queue_limitで決まる.</p>
-
-<p>これらのデフォルト値は以下に解説付きでまとまっている. (良く参照させて頂いています)
-<a href="http://d.hatena.ne.jp/tagomoris/20130123/1358929254">FluentdでバッファつきOutputPluginを使うときのデフォルト値</a></p>
-
-<h2>何回くらいリトライするの？ リトライの間隔は？</h2>
-
-<p>リトライの回数は、retry_limit(デフォルト 17)で指定された回数まで. 間隔は一定ではなく、段々延びていく. 具体的に間隔を計算してるのは、BufferedOutput#calc_retry_wait.</p>
-
-<p>リトライ間隔は、以下のパラメータでコントロールすることができる</p>
-
-<ul>
-<li>max_retry_wait(デフォルト: nil = 上限なし)</li>
-<li>retry_wait (デフォルト: 1.0)</li>
-</ul>
-
-
-<p>同じメソッドを使って、実際にどれくらいになるのかを計算させてみた. 以下で例えば、1=>2は、一度送信に失敗してから、2回目の送信を試みるまでという意味. 単位は秒. 全てデフォルト値だと、以下の様な感じ. 最大だと、33765秒=9時間22分になる.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>1=&gt;2 : 1.0799124443510373
-</span><span class='line'>2=&gt;3 : 1.8141315928054327
-</span><span class='line'>3=&gt;4 : 3.5115188260172046
-</span><span class='line'>4=&gt;5 : 7.106397160810471
-</span><span class='line'>5=&gt;6 : 14.175590112052593
-</span><span class='line'>6=&gt;7 : 31.434005639868758
-</span><span class='line'>7=&gt;8 : 68.4743252224448
-</span><span class='line'>8=&gt;9 : 116.47949944913451
-</span><span class='line'>9=&gt;10 : 279.97276701667636
-</span><span class='line'>10=&gt;11 : 487.69976826480445
-</span><span class='line'>11=&gt;12 : 909.7729519328531
-</span><span class='line'>12=&gt;13 : 2125.0559803853725
-</span><span class='line'>13=&gt;14 : 3717.0255349933364
-</span><span class='line'>14=&gt;15 : 8658.913465429461
-</span><span class='line'>15=&gt;16 : 18189.354025481873
-</span><span class='line'>16=&gt;17 : 33765.98470398931
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>例えば、max_retry_wait=120とすると、以下のようになる. 何回リトライしても、リトライ間隔の上限はmax_retry_waitまでになる.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>1=&gt;2 : 1.0717022666140232
-</span><span class='line'>2=&gt;3 : 1.9866738239982864
-</span><span class='line'>3=&gt;4 : 3.9258714996769903
-</span><span class='line'>4=&gt;5 : 7.002702902759963
-</span><span class='line'>5=&gt;6 : 15.817343449261045
-</span><span class='line'>6=&gt;7 : 34.49173945537066
-</span><span class='line'>7=&gt;8 : 65.98469012616731
-</span><span class='line'>8=&gt;9 : 120
-</span><span class='line'>9=&gt;10 : 120
-</span><span class='line'>10=&gt;11 : 120
-</span><span class='line'>11=&gt;12 : 120
-</span><span class='line'>12=&gt;13 : 120
-</span><span class='line'>13=&gt;14 : 120
-</span><span class='line'>14=&gt;15 : 120
-</span><span class='line'>15=&gt;16 : 120
-</span><span class='line'>16=&gt;17 : 120
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>retry_waitを半分の0.5にすると、全てのリトライ間隔が半分になる.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-<span class='line-number'>6</span>
-<span class='line-number'>7</span>
-<span class='line-number'>8</span>
-<span class='line-number'>9</span>
-<span class='line-number'>10</span>
-<span class='line-number'>11</span>
-<span class='line-number'>12</span>
-<span class='line-number'>13</span>
-<span class='line-number'>14</span>
-<span class='line-number'>15</span>
-<span class='line-number'>16</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>1=&gt;2 : 0.46442639898905974
-</span><span class='line'>2=&gt;3 : 0.9688421553729557
-</span><span class='line'>3=&gt;4 : 2.2291735347851613
-</span><span class='line'>4=&gt;5 : 3.545406346443683
-</span><span class='line'>5=&gt;6 : 7.824124603156501
-</span><span class='line'>6=&gt;7 : 17.564462446502926
-</span><span class='line'>7=&gt;8 : 30.97024814321994
-</span><span class='line'>8=&gt;9 : 71.84343582620227
-</span><span class='line'>9=&gt;10 : 127.87010583643446
-</span><span class='line'>10=&gt;11 : 286.751861977861
-</span><span class='line'>11=&gt;12 : 551.32668884554
-</span><span class='line'>12=&gt;13 : 1077.2785515357239
-</span><span class='line'>13=&gt;14 : 2095.196745718026
-</span><span class='line'>14=&gt;15 : 3995.080966184667
-</span><span class='line'>15=&gt;16 : 9131.408473518048
-</span><span class='line'>16=&gt;17 : 16810.484835714517
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>リトライの頻度を増やす(リトライ間隔を減らす)場合は、併せてretry_limitも変更しないと、早々にリトライアウトしてしまう、ということになるので注意.</p>
-
-<h2>リトライ回数が超過したら？</h2>
-
-<p>リトライ回数を超過した場合、secodaryディレクティブを指定しておけば、そちらに出力される. 通常は、ファイルに出力しておいて、後からリカバリに使う、というケースが多いと思う.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>  &lt;secondary&gt;
-</span><span class='line'>    type file
-</span><span class='line'>    path /path/to/forward-failed
-</span><span class='line'>  &lt;/secondary&gt;</span></code></pre></td></tr></table></div></figure>
-
-
-<p>このようなケースでは、ログに以下のように出力される</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>2014-06-22 07:06:40 +0900 [warn]: fluent/output.rb:352:rescue in try_flush: retry count exceededs limit. falling back to secondary output.
-</span></code></pre></td></tr></table></div></figure>
-
-
-<h2>キューが溢れたら？</h2>
-
-<p>キュー(バッファ)が溢れると、fluentdのログに以下のようなメッセージが出る.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>2014-05-25 11:30:23 +0900 [warn]: fluent/engine.rb:149:rescue in emit_stream: emit transaction failed  error_class=Fluent::BufferQueueLimitError error=#&lt;Fluent::BufferQueueLimitError: queue size exceeds limit&gt;
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>この場合、inputプラグインがEngine.emitを実行する際にExceptionが発生する. プラグインが、これをrescueしていない場合、inputプラグインは停止する. rescueしている場合はinputプラグインの実装次第だが、大抵Exceptionは無視されてemitしたデータは破棄される.
-(既に溜めるためのキューがあふれているので、それしか無い)</p>
-
-<h2>送信先が復活したら?</h2>
-
-<p>再送中に送信先が復活し、再送に成功した場合は以下の様なメッセージが出力される.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>2014-05-25 11:33:01 +0900 [warn]: fluent/output.rb:312:try_flush: retry succeeded. instance=70365422937420</span></code></pre></td></tr></table></div></figure>
-
-
-<p>ここで、注意点として送信先が復活してもすぐに再送してくれるわけではない. これは、送信先とのハートビートを行っているout_forwardでも一緒. BufferedOutput#try_flushのコードを見ると分かるが、リトライ中で、まだ次のリトライ時刻に達していない場合は、送信は行わない.</p>
-
-<p>なので、retryを繰り返して再送間隔が延びている場合は、次の再送タイミングになるまでキューが溜まり続ける(もしくは、既に溢れている場合は溢れ続ける)</p>
-
-<h2>キューを強制的に送信することはできないの？</h2>
-
-<p>v0.10.59以前の場合 → リトライ中の場合以外であれば、fluentdのプロセスにSIGUSR1を送ることでキューが吐き出される. リトライ中の場合は、次のリトライタイミングまでは送信されない.全てのキューを吐き出すには、プロセスを停止するしかない.</p>
-
-<p>v0.10.59以降の場合 → リトライ中の場合含め、fluentdのプロセスにSIGUSR1を送ることでキューが吐き出される. (2014/4/4追記: @sonotsさんに頂いたコメントを反映しました)</p>
-
-<p>プロセス停止時の挙動は使用しているバッファプラグインによって異なるが</p>
-
-<ul>
-<li>buf_memoryの場合
-
-<ul>
-<li>プロセス停止時に全てのキューが吐き出される.</li>
-</ul>
-</li>
-<li>buf_fileの場合
-
-<ul>
-<li>flush_at_shutdownがtrue(デフォルト false)の場合のみ、プロセス停止時に全てのキューが吐き出される.</li>
-</ul>
-</li>
-</ul>
-
-
-<p>長くなったのでここまで.</p>
-</div>
-  
-  
-
-
-    </article>
-  
   <div class="pagination">
     
       <a class="prev" href="/blog/page/2/">&larr; Older</a>
@@ -2581,7 +2354,11 @@ group by account</p>
   <ul id="recent_posts">
     
       <li class="post">
-        <a href="/blog/2015/08/13/esper-and-java-method/">EsperのEPLでjava methodとGROUP Byを使ったらレコードが重複した話</a>
+        <a href="/blog/2016/02/08/hadoop-slash-spark-conference-2016/">Hadoop / Spark Conference Japan 2016 に行ってきた</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/07/18/a-record-of-my-job-change/">転職して3ヶ月が経ったので、振り返ってみる</a>
       </li>
     
       <li class="post">
@@ -2596,15 +2373,11 @@ group by account</p>
         <a href="/blog/2015/01/27/hdp2-dot-2-resoruce-manager-could-not-transition-to-active/">HDP2.2でResourceManagerが両系standbyになった事象</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2015/01/06/hdp2-dot-2-installation-memo/">HDP2.2をセットアップするためにハマった箇所のメモ</a>
-      </li>
-    
   </ul>
 </section>
 <section>
   <h1>Categories</h1>
-    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/esper'>Esper (1)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (2)</a></li><li><a href='/blog/categories/norikra'>Norikra (1)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li></ul>
+    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (3)</a></li><li><a href='/blog/categories/misc'>misc (1)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li><li><a href='/blog/categories/spark'>Spark (1)</a></li></ul>
 </section>
 
   
@@ -2613,7 +2386,7 @@ group by account</p>
     </div>
   </div>
   <footer role="contentinfo"><p>
-  Copyright &copy; 2015 - OGIBAYASHI Hironori -
+  Copyright &copy; 2016 - OGIBAYASHI Hironori -
   <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
 </p>
 
