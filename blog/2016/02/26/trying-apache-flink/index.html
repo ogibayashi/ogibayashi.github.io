@@ -1,0 +1,313 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Apache Flinkを試している - Tech Notes</title>
+  <meta name="author" content="OGIBAYASHI Hironori">
+
+  
+  <meta name="description" content="耐障害性と拡張性のあるストリーム処理基盤が欲しい、と思ってApache Flinkを調べている. 今はリアルタイム集計にNorikraを使っていて、これはとてもカジュアルに使えて良いのだけど、以下の様なケースだと難しい。 比較的止めたくない処理で、サーバ障害時にも自動的に回復して欲しい &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://ogibayashi.github.io/blog/2016/02/26/trying-apache-flink">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="Tech Notes" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">Tech Notes</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:ogibayashi.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Apache Flinkを試している</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-02-26T20:38:01+09:00" pubdate data-updated="true">Feb 26<span>th</span>, 2016</time>
+        
+           | <a href="#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p>耐障害性と拡張性のあるストリーム処理基盤が欲しい、と思って<a href="https://flink.apache.org/">Apache Flink</a>を調べている. 今はリアルタイム集計に<a href="http://norikra.github.io/">Norikra</a>を使っていて、これはとてもカジュアルに使えて良いのだけど、以下の様なケースだと難しい。</p>
+
+<ul>
+<li>比較的止めたくない処理で、サーバ障害時にも自動的に回復して欲しい</li>
+<li>1日とか長いtime windowの集計をしているので、途中でサーバが落ちて集計中の状態が失われると辛い</li>
+<li>トラフィックが増えてきて、複数サーバに負荷を分散したい</li>
+<li>例えばストリームに含まれているIDに対応する値を外部のテーブルから取ってくるような、ちょっと複雑な処理をしたい</li>
+</ul>
+
+
+<h3>Flinkとはどのようなソフトウェアか</h3>
+
+<p>一言で言うと、対障害性と拡張性を備えた、分散ストリーム処理基盤。バッチ処理もストリーム処理の仕組みでできるよね、ということでバッチ用、ストリーム用両方のAPIが提供されている。実行環境としては、Hadoop等と同じようにワーカプロセスが複数のサーバで立ち上がっていて、そこに対してジョブを投げるような感じになっている。バッチではジョブを投げるとデータを処理して終了、だけど、ストリーム処理では投げたジョブはずっと生きていて、ストリームにデータが流れてくるたびにそのデータを処理して出力する、という形になる。ジョブは、JavaとScalaで書くことができる。ロードマップにはSQL的なものもあるっぽいけど、今は存在しない。</p>
+
+<h3>SparkとかStormと何が違うの？</h3>
+
+<p>ググると色々出てくるが、<a href="https://yahooeng.tumblr.com/post/135321837876/benchmarking-streaming-computation-engines-at">米Yahooのベンチマーク</a>とか、<a href="http://www.altaterra.net/blogpost/288668/225612/Which-Stream-Processing-Engine-Storm-Spark-Samza-or-Flink">このページ</a>が分かりやすかった。</p>
+
+<p>Stromとの比較で言うと、処理形態はほぼ同じ。ただ、大きな違いとしてStormでは各処理オペレータはstatelessになっていて、落ちると状態が失われる。永続化したかったら、自分で外部ストレージを使うようなコードを書く必要がある。耐障害性ということろだと、各レコードに対して処理が完了した際にackを返す仕組みがあるので、障害などでackが無かったら再度処理する、というような処理を書く感じになる。なので、例えば処理が途中まで行われて障害になると、そのレコードは重複して処理される形になる。Flinkは<a href="https://ci.apache.org/projects/flink/flink-docs-master/internals/stream_checkpointing.html">ここ</a>に詳しく書いてあるけど、オペレータがstatefulになっていて、チェックポイントごとに状態が保存される。障害時には、チェックポイントから復旧し、それ以降のレコードをリプレイすることで、exactly-onceを実現している。</p>
+
+<p>あとは、Stormだと各処理オペレータ(Bolt)をJavaのクラスとして書かないといけないけど、Flinkは<code>stream.keyBy(...).map{...}.timeWindow(...)</code>みたいな感じのハイレベルのAPIが提供されている。</p>
+
+<p>Spark Streamingとの違いで言うと、Spark Streamingは正確にはストリーミングではなくてマイクロバッチなので、そのバッチの間隔にストリーム処理のwindowが左右される。sliding time windowとか、一定数のレコードを保持するようなwindowは作ることができない。(ちゃんとドキュメント読んでないけど、そのはず)</p>
+
+<h3>触ってみた</h3>
+
+<p>とりあえず触ってみるには、<a href="https://ci.apache.org/projects/flink/flink-docs-release-0.10/quickstart/setup_quickstart.html">https://ci.apache.org/projects/flink/flink-docs-release-0.10/quickstart/setup_quickstart.html</a> に従えば良い。</p>
+
+<p>ざっくりした流れとしては、</p>
+
+<ul>
+<li>バイナリをダウンロードして展開</li>
+<li><code>./bin/start-local.sh</code> 実行</li>
+<li><a href="http://localhost:8081/">http://localhost:8081/</a> でJobManagerを開く</li>
+<li>exampleがバイナリと一緒に配布されているので、それを実行</li>
+</ul>
+
+
+<p>という感じで試すことができる。</p>
+
+<p>クラスタを組むのも割と簡単で、 <a href="https://ci.apache.org/projects/flink/flink-docs-release-0.10/setup/cluster_setup.html">https://ci.apache.org/projects/flink/flink-docs-release-0.10/setup/cluster_setup.html</a> に従えばできる。</p>
+
+<p>JobManagerというのがマスタで、TaskManagerというのがワーカになっているので、これをサーバに分散配置することになる。</p>
+
+<p>流れとしては、</p>
+
+<ul>
+<li>各サーバにflink用のユーザとssh keyを用意
+
+<ul>
+<li>ssh keyは、起動スクリプトの中でssh経由でTaskManagerを起動するので必要.自分で各サーバのTaskManagerを起動して回るなら無くても良い</li>
+</ul>
+</li>
+<li>各サーバにバイナリを配布</li>
+<li>設定ファイル(flink-conf.yaml, slaves)を用意
+
+<ul>
+<li>flink-conf.yamlは、配布されているものをそのまま使って、JobManagerのアドレスを設定すれば良い</li>
+<li>slavesはTaskManagerホストを列挙したもの。クラスタ起動スクリプトの中で使われる</li>
+</ul>
+</li>
+</ul>
+
+
+<p>となる。
+  ジョブを書くには、<a href="https://ci.apache.org/projects/flink/flink-docs-release-0.10/quickstart/scala_api_quickstart.html">https://ci.apache.org/projects/flink/flink-docs-release-0.10/quickstart/scala_api_quickstart.html</a> に従う。mavenのアーキタイプが用意されてるので、それでプロジェクトのテンプレートを作って、ドキュメントの中にあるWordCountをコピーして走らせれば良い。</p>
+
+<h3>感想</h3>
+
+<p>試しにfluend→Kafka→Flink→Elasticsearch、とつなげて分散実行してみたり、プロセスを落としてみたりしたが、期待通りに動作した。例えば、5分間のtime windowで件数を集計するような処理を作って、実行中にプロセスを落とすと、障害が検知されてジョブが再実行される。そして、勝手に必要なリカバリがされるので、障害があっても無くても実行結果は変わらない。すごい。(もう少しちゃんと見ると、ずれるケースもありそうだけど、まだ詳しく見ていない)</p>
+
+<p>並列度は、ジョブの投入時に指定できるので、ちゃんとKafkaのパーティションを複数作って並列度を指定して実行すれば、各TaskManagerに分散して実行される。</p>
+
+<p>ただ、性能のところが今一つで、処理を3サーバに分散、5,000msg/secを投入してやってみたら、各サーバ1CPUを100%使って、Kafkaにメッセージが滞留する状態になった。実際に処理できたのは4,300msg/secくらい。3CPUで4,300msg/secだと大分コストが高いなあ、という印象。まあ、とりあえず動かしてみただけなので、何か正しくない可能性はある。もう少し試してみたい。</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">OGIBAYASHI Hironori</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-02-26T20:38:01+09:00" pubdate data-updated="true">Feb 26<span>th</span>, 2016</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/flink/'>Flink</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://ogibayashi.github.io/blog/2016/02/26/trying-apache-flink/" data-via="" data-counturl="http://ogibayashi.github.io/blog/2016/02/26/trying-apache-flink/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2016/02/08/hadoop-slash-spark-conference-2016/" title="Previous Post: Hadoop / Spark Conference Japan 2016 に行ってきた">&laquo; Hadoop / Spark Conference Japan 2016 に行ってきた</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+  <section>
+    <h1>Comments</h1>
+    <div id="disqus_thread" aria-live="polite"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+</div>
+  </section>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/02/26/trying-apache-flink/">Apache Flinkを試している</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/02/08/hadoop-slash-spark-conference-2016/">Hadoop / Spark Conference Japan 2016 に行ってきた</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/03/24/code-reading-of-fluentd-v0-dot-12-filter-and-label-related/">FluentdのFilter&Label周りのコードを読んだメモ</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/02/28/incompatible-character-encodings-in-fluentd/">Fluentdで Incompatible Character Encodingのエラーが出た話</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/01/27/hdp2-dot-2-resoruce-manager-could-not-transition-to-active/">HDP2.2でResourceManagerが両系standbyになった事象</a>
+      </li>
+    
+  </ul>
+</section>
+<section>
+  <h1>Categories</h1>
+    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/flink'>Flink (1)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (3)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li><li><a href='/blog/categories/spark'>Spark (1)</a></li></ul>
+</section>
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2016 - OGIBAYASHI Hironori -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+<script type="text/javascript">
+      var disqus_shortname = 'technotes-ogibayashi';
+      
+        
+        // var disqus_developer = 1;
+        var disqus_identifier = 'http://ogibayashi.github.io/blog/2016/02/26/trying-apache-flink/';
+        var disqus_url = 'http://ogibayashi.github.io/blog/2016/02/26/trying-apache-flink/';
+        var disqus_script = 'embed.js';
+      
+    (function () {
+      var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+      dsq.src = '//' + disqus_shortname + '.disqus.com/' + disqus_script;
+      (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    }());
+</script>
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

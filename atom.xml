@@ -4,7 +4,7 @@
   <title><![CDATA[Tech Notes]]></title>
   <link href="http://ogibayashi.github.io/atom.xml" rel="self"/>
   <link href="http://ogibayashi.github.io/"/>
-  <updated>2016-02-09T10:10:50+09:00</updated>
+  <updated>2016-02-26T21:43:43+09:00</updated>
   <id>http://ogibayashi.github.io/</id>
   <author>
     <name><![CDATA[OGIBAYASHI Hironori]]></name>
@@ -12,6 +12,88 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Apache Flinkを試している]]></title>
+    <link href="http://ogibayashi.github.io/blog/2016/02/26/trying-apache-flink/"/>
+    <updated>2016-02-26T20:38:01+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2016/02/26/trying-apache-flink</id>
+    <content type="html"><![CDATA[<p>耐障害性と拡張性のあるストリーム処理基盤が欲しい、と思って<a href="https://flink.apache.org/">Apache Flink</a>を調べている. 今はリアルタイム集計に<a href="http://norikra.github.io/">Norikra</a>を使っていて、これはとてもカジュアルに使えて良いのだけど、以下の様なケースだと難しい。</p>
+
+<ul>
+<li>比較的止めたくない処理で、サーバ障害時にも自動的に回復して欲しい</li>
+<li>1日とか長いtime windowの集計をしているので、途中でサーバが落ちて集計中の状態が失われると辛い</li>
+<li>トラフィックが増えてきて、複数サーバに負荷を分散したい</li>
+<li>例えばストリームに含まれているIDに対応する値を外部のテーブルから取ってくるような、ちょっと複雑な処理をしたい</li>
+</ul>
+
+
+<h3>Flinkとはどのようなソフトウェアか</h3>
+
+<p>一言で言うと、対障害性と拡張性を備えた、分散ストリーム処理基盤。バッチ処理もストリーム処理の仕組みでできるよね、ということでバッチ用、ストリーム用両方のAPIが提供されている。実行環境としては、Hadoop等と同じようにワーカプロセスが複数のサーバで立ち上がっていて、そこに対してジョブを投げるような感じになっている。バッチではジョブを投げるとデータを処理して終了、だけど、ストリーム処理では投げたジョブはずっと生きていて、ストリームにデータが流れてくるたびにそのデータを処理して出力する、という形になる。ジョブは、JavaとScalaで書くことができる。ロードマップにはSQL的なものもあるっぽいけど、今は存在しない。</p>
+
+<h3>SparkとかStormと何が違うの？</h3>
+
+<p>ググると色々出てくるが、<a href="https://yahooeng.tumblr.com/post/135321837876/benchmarking-streaming-computation-engines-at">米Yahooのベンチマーク</a>とか、<a href="http://www.altaterra.net/blogpost/288668/225612/Which-Stream-Processing-Engine-Storm-Spark-Samza-or-Flink">このページ</a>が分かりやすかった。</p>
+
+<p>Stromとの比較で言うと、処理形態はほぼ同じ。ただ、大きな違いとしてStormでは各処理オペレータはstatelessになっていて、落ちると状態が失われる。永続化したかったら、自分で外部ストレージを使うようなコードを書く必要がある。耐障害性ということろだと、各レコードに対して処理が完了した際にackを返す仕組みがあるので、障害などでackが無かったら再度処理する、というような処理を書く感じになる。なので、例えば処理が途中まで行われて障害になると、そのレコードは重複して処理される形になる。Flinkは<a href="https://ci.apache.org/projects/flink/flink-docs-master/internals/stream_checkpointing.html">ここ</a>に詳しく書いてあるけど、オペレータがstatefulになっていて、チェックポイントごとに状態が保存される。障害時には、チェックポイントから復旧し、それ以降のレコードをリプレイすることで、exactly-onceを実現している。</p>
+
+<p>あとは、Stormだと各処理オペレータ(Bolt)をJavaのクラスとして書かないといけないけど、Flinkは<code>stream.keyBy(...).map{...}.timeWindow(...)</code>みたいな感じのハイレベルのAPIが提供されている。</p>
+
+<p>Spark Streamingとの違いで言うと、Spark Streamingは正確にはストリーミングではなくてマイクロバッチなので、そのバッチの間隔にストリーム処理のwindowが左右される。sliding time windowとか、一定数のレコードを保持するようなwindowは作ることができない。(ちゃんとドキュメント読んでないけど、そのはず)</p>
+
+<h3>触ってみた</h3>
+
+<p>とりあえず触ってみるには、<a href="https://ci.apache.org/projects/flink/flink-docs-release-0.10/quickstart/setup_quickstart.html">https://ci.apache.org/projects/flink/flink-docs-release-0.10/quickstart/setup_quickstart.html</a> に従えば良い。</p>
+
+<p>ざっくりした流れとしては、</p>
+
+<ul>
+<li>バイナリをダウンロードして展開</li>
+<li><code>./bin/start-local.sh</code> 実行</li>
+<li><a href="http://localhost:8081/">http://localhost:8081/</a> でJobManagerを開く</li>
+<li>exampleがバイナリと一緒に配布されているので、それを実行</li>
+</ul>
+
+
+<p>という感じで試すことができる。</p>
+
+<p>クラスタを組むのも割と簡単で、 <a href="https://ci.apache.org/projects/flink/flink-docs-release-0.10/setup/cluster_setup.html">https://ci.apache.org/projects/flink/flink-docs-release-0.10/setup/cluster_setup.html</a> に従えばできる。</p>
+
+<p>JobManagerというのがマスタで、TaskManagerというのがワーカになっているので、これをサーバに分散配置することになる。</p>
+
+<p>流れとしては、</p>
+
+<ul>
+<li>各サーバにflink用のユーザとssh keyを用意
+
+<ul>
+<li>ssh keyは、起動スクリプトの中でssh経由でTaskManagerを起動するので必要.自分で各サーバのTaskManagerを起動して回るなら無くても良い</li>
+</ul>
+</li>
+<li>各サーバにバイナリを配布</li>
+<li>設定ファイル(flink-conf.yaml, slaves)を用意
+
+<ul>
+<li>flink-conf.yamlは、配布されているものをそのまま使って、JobManagerのアドレスを設定すれば良い</li>
+<li>slavesはTaskManagerホストを列挙したもの。クラスタ起動スクリプトの中で使われる</li>
+</ul>
+</li>
+</ul>
+
+
+<p>となる。
+  ジョブを書くには、<a href="https://ci.apache.org/projects/flink/flink-docs-release-0.10/quickstart/scala_api_quickstart.html">https://ci.apache.org/projects/flink/flink-docs-release-0.10/quickstart/scala_api_quickstart.html</a> に従う。mavenのアーキタイプが用意されてるので、それでプロジェクトのテンプレートを作って、ドキュメントの中にあるWordCountをコピーして走らせれば良い。</p>
+
+<h3>感想</h3>
+
+<p>試しにfluend→Kafka→Flink→Elasticsearch、とつなげて分散実行してみたり、プロセスを落としてみたりしたが、期待通りに動作した。例えば、5分間のtime windowで件数を集計するような処理を作って、実行中にプロセスを落とすと、障害が検知されてジョブが再実行される。そして、勝手に必要なリカバリがされるので、障害があっても無くても実行結果は変わらない。すごい。(もう少しちゃんと見ると、ずれるケースもありそうだけど、まだ詳しく見ていない)</p>
+
+<p>並列度は、ジョブの投入時に指定できるので、ちゃんとKafkaのパーティションを複数作って並列度を指定して実行すれば、各TaskManagerに分散して実行される。</p>
+
+<p>ただ、性能のところが今一つで、処理を3サーバに分散、5,000msg/secを投入してやってみたら、各サーバ1CPUを100%使って、Kafkaにメッセージが滞留する状態になった。実際に処理できたのは4,300msg/secくらい。3CPUで4,300msg/secだと大分コストが高いなあ、という印象。まあ、とりあえず動かしてみただけなので、何か正しくない可能性はある。もう少し試してみたい。</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Hadoop / Spark Conference Japan 2016 に行ってきた]]></title>
@@ -31,84 +113,6 @@
 <p>あと、本題とは関係ないけど、懇親会の中で同僚と話していて、日頃仕事でやっていることとか、公開できる範囲でブログに書いて世の中に共有することは大事だよね、という話になった。自分もそういう記事に多分にお世話になっているので。ということで、まずは忘れないうちにこの記事を書いておこう、と思った次第です。(誰かの役は立たなそうだけど、まずは書く、ということで)</p>
 
 <p>最後に、運営に関わられた方々、発表者の方々、どうもありがとうございました。各発表も、運営周りも、ランチも懇親会も素晴らしかったです。</p>
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[EsperのEPLでjava methodとGROUP Byを使ったらレコードが重複した話]]></title>
-    <link href="http://ogibayashi.github.io/blog/2015/08/13/esper-and-java-method/"/>
-    <updated>2015-08-13T10:19:29+09:00</updated>
-    <id>http://ogibayashi.github.io/blog/2015/08/13/esper-and-java-method</id>
-    <content type="html"><![CDATA[<p>Norikraで以下の様な感じの、GROUP BYして、SELECTの中でjavaメソッドを使うようなクエリを登録していたのだけど、なんか生成されるイベントが多い、というのが発端で調べてみた.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>SELECT str, str.split(",") as splitted, count(*) as cnt FROM str_stream.win:time_batch(10 sec) GROUP BY str</span></code></pre></td></tr></table></div></figure>
-
-
-<p>上記のクエリを登録した状態で、以下のようにイベントを投入する.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ echo '{"str":"a,b,c"}' | norikra-client event send str_stream
-</span><span class='line'>$ echo '{"str":"a,b,c"}' | norikra-client event send str_stream
-</span><span class='line'>$ echo '{"str":"a,b,c"}' | norikra-client event send str_stream</span></code></pre></td></tr></table></div></figure>
-
-
-<p>と、こんな感じで同じようなレコードが重複して生成される. <code>count(*)</code>は正しくカウントされているのだが、GROUP BYしているので1レコードになってて欲しい.</p>
-
-<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-</pre></td><td class='code'><pre><code class=''><span class='line'>$ norikra-client event sweep
-</span><span class='line'>{"time":"2015/07/31 12:06:52","query":"splittest","str":"a,b,c","splitted":["a","b","c"],"cnt":3}
-</span><span class='line'>{"time":"2015/07/31 12:06:52","query":"splittest","str":"a,b,c","splitted":["a","b","c"],"cnt":3}
-</span><span class='line'>{"time":"2015/07/31 12:06:52","query":"splittest","str":"a,b,c","splitted":["a","b","c"],"cnt":3}</span></code></pre></td></tr></table></div></figure>
-
-
-<p>Norikraではなく、Esperで同じことを実験してみても発生するので、Esperの事象っぽい.<a href="http://www.espertech.com/esper/release-5.2.0/esper-reference/html/processingmodel.html">公式ドキュメント</a>の&#8221;3.7.2. Output for Aggregation and Group-By&#8221;を見ると、以下の様な記述がある。 GROUP BYの中に無いフィールドをSELECTすると、入力イベントと同じ数の出力イベントが発生するよ、という話.</p>
-
-<blockquote><p>If your statement selects non-aggregated properties and aggregation values, and groups only some properties using the group by clause, your statement may look as below:</p>
-
-<p> select account, accountName, sum(amount)
-from Withdrawal.win:time_batch(1 sec)
-group by account</p>
-
-<p>At the end of a time interval, the engine posts to listeners one row per event. The aggregation result aggregates per unique account.</p></blockquote>
-
-<p>とは言え、GROUP BYの中に<code>str.split(",")</code>を入れても同じ. 値は同じでも、Stringクラスのオブジェクトは別になってしまうからなのかなぁ. 一応、回避策としてはfirsteverという、イベントの中で最初の値だけを取る関数があるので、<code>firstever(str.split(","))</code>のようにすると1レコードに集約できた.</p>
-
-<p>Issueで聞いてみた.
-<a href="https://github.com/espertechinc/esper/issues/18">https://github.com/espertechinc/esper/issues/18</a></p>
-
-<p>若干うまく伝わらなかった気がするけど、javaメソッドではなく同等の機能を持つUDFを作ればうまくいくよ、ということらしい。実際、EsperのUDFを作ってみたら、ちゃんと集約された。</p>
-
-<p>ちなみに、EsperのUDFを作るのは簡単で、以下のようにstaticなメソッドを持つクラスを作って</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-<span class='line-number'>2</span>
-<span class='line-number'>3</span>
-<span class='line-number'>4</span>
-<span class='line-number'>5</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">MyUtilityClass</span> <span class="o">{</span>
-</span><span class='line'>    <span class="kd">public</span> <span class="kd">static</span> <span class="n">String</span><span class="o">[]</span> <span class="nf">split</span><span class="o">(</span><span class="n">String</span> <span class="n">str</span><span class="o">,</span> <span class="n">String</span> <span class="n">regex</span><span class="o">){</span>
-</span><span class='line'>        <span class="k">return</span> <span class="n">str</span><span class="o">.</span><span class="na">split</span><span class="o">(</span><span class="n">regex</span><span class="o">);</span>
-</span><span class='line'>    <span class="o">}</span>
-</span><span class='line'><span class="o">}</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>ConfigurationクラスのaddPlugInSingleRowFunctionメソッドで、function名、クラス名、メソッド名を渡してやれば良い。</p>
-
-<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
-</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">addPlugInSingleRowFunction</span><span class="o">(</span><span class="s">&quot;split&quot;</span><span class="o">,</span> <span class="n">MyUtilityClass</span><span class="o">.</span><span class="na">class</span><span class="o">.</span><span class="na">getName</span><span class="o">(),</span> <span class="s">&quot;split&quot;</span><span class="o">);</span>
-</span></code></pre></td></tr></table></div></figure>
-
-
-<p>まあ、都度UDF作るのも面倒なので、firsteverで回避出来る場合はそうするかなぁ.</p>
-
-<p>そんな話でした.</p>
 ]]></content>
   </entry>
   
