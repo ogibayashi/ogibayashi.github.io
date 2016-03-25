@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: 勉強会 | Tech Notes]]></title>
+  <link href="http://ogibayashi.github.io/blog/categories/mian-qiang-hui/atom.xml" rel="self"/>
+  <link href="http://ogibayashi.github.io/"/>
+  <updated>2016-03-25T21:56:24+09:00</updated>
+  <id>http://ogibayashi.github.io/</id>
+  <author>
+    <name><![CDATA[OGIBAYASHI Hironori]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[GREE Tech Talk 10に行ってきた]]></title>
+    <link href="http://ogibayashi.github.io/blog/2016/03/25/gree-tech-talk-10/"/>
+    <updated>2016-03-25T21:12:46+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2016/03/25/gree-tech-talk-10</id>
+    <content type="html"><![CDATA[<p><a href="http://techtalk.labs.gree.jp/10/">GREE Tech Talk #10</a> に行ってきたのでメモ.</p>
+
+<p>今回のテーマはData Visualizationということで、どんな見せ方をしたら効果的か、とかその辺の話が聞けたら良いな、と思って参加した.
+実際にはそれよりも、こんなツールでこんなことできるよ、系の話が多かった. まあ、それはそれで面白かったのだけど、実際ツールは色々あるので、それらの中から適切なものを
+選ぶためにも、みんな何をどう見て、どう活かしているのか、というあたりの話がもっとあると良かったなあ、というのが全体的な感想.</p>
+
+<p>行って一番の収穫は、GREE反田さんのGrafanaにPrometheusのデータソースを追加した話だった. 自分も仕事でGrafana+Prometheusの組み合わせに出会って、
+これはすごい、素晴らしいと思って最近使っているのだけど、Prometheusデータソースを作ったのが日本の方だとは知らなかった. 自分はまだProemtheusを十分に使いこなせて
+いないので、懇親会の中で色々話を聞けたのは大変良かった。幾つかメモしておくと、</p>
+
+<ul>
+<li>Prometheusのアラートは任意のURLにJSONで投げることができるので、fluentdで受けて好きなところに飛ばす、ということができる</li>
+<li>service discoveryにはファイルを使うことができる. つまり、例えばcronで社内の構成管理システムを叩いて、
+ファイルに吐き出すようにしておけば、Prometheusがそれを随時読み込んでポーリング対象のリストを更新してくれる</li>
+<li>Prometheusのクエリは結構色々できそう. 移動平均的な感じでトレンドを表示したり、変化が一定以上のものを表示したり.</li>
+<li>GrafanaのTemplatingの機能も便利そう. 特定のホストグループに対してグラフを作ったり、というのが動的にできるっぽい</li>
+<li>新しいメトリックを追加するのはちょっと面倒だなぁ、と思っているのだけど、そこはやはりexporterを書く感じになるらしい.</li>
+</ul>
+
+
+<p>Prometheusの話以外だと、<a href="http://e2d3.org/ja/">E2D3</a>というのも面白そうだった。Excelを使って、d3.js等を使った色々な可視化をすることができる.
+可視化のパターンはテンプレートという形で誰でも作って公開できるので、既存のテンプレートを使って、そこにExcelから値を埋めて、、、という感じで
+簡単に、見た目のインパクトがある素敵なグラフなどを作ることができるとのこと.
+Excel、好きではないけどやっぱり手軽で素晴らしいツールなので、これとE2D3を使うと結構楽しそうだな、と思った.</p>
+
+<p>自分はインフラとかミドルウェアが中心で、あまりUIを作る人では無いのだけど、処理した結果のデータから最終的な価値を引き出すところは可視化がやっぱり鍵で、
+こんな風に見たいから、こんなデータを集めないと、とか、大量のデータを素早く処理したい、とか、もっとリアルタイムに、とか裏側のモチベーションに繋がる
+ところがあると思う. いい感じの裏側作っても、見た目が無いと伝わらないし.</p>
+
+<p>あと、会場では飲み物とお菓子が豊富でビックリした。無料で興味深い話を聞けた上に、懇親会まで含めて飲み食いも無料でできるとは、なんて素晴らしいんだと
+思った勉強会でした. 関係者の皆さんに感謝です.</p>
+]]></content>
+  </entry>
+  
+</feed>

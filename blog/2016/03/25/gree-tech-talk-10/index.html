@@ -1,0 +1,271 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>GREE Tech Talk 10に行ってきた - Tech Notes</title>
+  <meta name="author" content="OGIBAYASHI Hironori">
+
+  
+  <meta name="description" content="GREE Tech Talk #10 に行ってきたのでメモ. 今回のテーマはData Visualizationということで、どんな見せ方をしたら効果的か、とかその辺の話が聞けたら良いな、と思って参加した.
+実際にはそれよりも、こんなツールでこんなことできるよ、系の話が多かった. まあ、 &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://ogibayashi.github.io/blog/2016/03/25/gree-tech-talk-10">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="Tech Notes" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">Tech Notes</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:ogibayashi.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">GREE Tech Talk 10に行ってきた</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-03-25T21:12:46+09:00" pubdate data-updated="true">Mar 25<span>th</span>, 2016</time>
+        
+           | <a href="#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><p><a href="http://techtalk.labs.gree.jp/10/">GREE Tech Talk #10</a> に行ってきたのでメモ.</p>
+
+<p>今回のテーマはData Visualizationということで、どんな見せ方をしたら効果的か、とかその辺の話が聞けたら良いな、と思って参加した.
+実際にはそれよりも、こんなツールでこんなことできるよ、系の話が多かった. まあ、それはそれで面白かったのだけど、実際ツールは色々あるので、それらの中から適切なものを
+選ぶためにも、みんな何をどう見て、どう活かしているのか、というあたりの話がもっとあると良かったなあ、というのが全体的な感想.</p>
+
+<p>行って一番の収穫は、GREE反田さんのGrafanaにPrometheusのデータソースを追加した話だった. 自分も仕事でGrafana+Prometheusの組み合わせに出会って、
+これはすごい、素晴らしいと思って最近使っているのだけど、Prometheusデータソースを作ったのが日本の方だとは知らなかった. 自分はまだProemtheusを十分に使いこなせて
+いないので、懇親会の中で色々話を聞けたのは大変良かった。幾つかメモしておくと、</p>
+
+<ul>
+<li>Prometheusのアラートは任意のURLにJSONで投げることができるので、fluentdで受けて好きなところに飛ばす、ということができる</li>
+<li>service discoveryにはファイルを使うことができる. つまり、例えばcronで社内の構成管理システムを叩いて、
+ファイルに吐き出すようにしておけば、Prometheusがそれを随時読み込んでポーリング対象のリストを更新してくれる</li>
+<li>Prometheusのクエリは結構色々できそう. 移動平均的な感じでトレンドを表示したり、変化が一定以上のものを表示したり.</li>
+<li>GrafanaのTemplatingの機能も便利そう. 特定のホストグループに対してグラフを作ったり、というのが動的にできるっぽい</li>
+<li>新しいメトリックを追加するのはちょっと面倒だなぁ、と思っているのだけど、そこはやはりexporterを書く感じになるらしい.</li>
+</ul>
+
+
+<p>Prometheusの話以外だと、<a href="http://e2d3.org/ja/">E2D3</a>というのも面白そうだった。Excelを使って、d3.js等を使った色々な可視化をすることができる.
+可視化のパターンはテンプレートという形で誰でも作って公開できるので、既存のテンプレートを使って、そこにExcelから値を埋めて、、、という感じで
+簡単に、見た目のインパクトがある素敵なグラフなどを作ることができるとのこと.
+Excel、好きではないけどやっぱり手軽で素晴らしいツールなので、これとE2D3を使うと結構楽しそうだな、と思った.</p>
+
+<p>自分はインフラとかミドルウェアが中心で、あまりUIを作る人では無いのだけど、処理した結果のデータから最終的な価値を引き出すところは可視化がやっぱり鍵で、
+こんな風に見たいから、こんなデータを集めないと、とか、大量のデータを素早く処理したい、とか、もっとリアルタイムに、とか裏側のモチベーションに繋がる
+ところがあると思う. いい感じの裏側作っても、見た目が無いと伝わらないし.</p>
+
+<p>あと、会場では飲み物とお菓子が豊富でビックリした。無料で興味深い話を聞けた上に、懇親会まで含めて飲み食いも無料でできるとは、なんて素晴らしいんだと
+思った勉強会でした. 関係者の皆さんに感謝です.</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">OGIBAYASHI Hironori</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-03-25T21:12:46+09:00" pubdate data-updated="true">Mar 25<span>th</span>, 2016</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/mian-qiang-hui/'>勉強会</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://ogibayashi.github.io/blog/2016/03/25/gree-tech-talk-10/" data-via="" data-counturl="http://ogibayashi.github.io/blog/2016/03/25/gree-tech-talk-10/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2016/02/26/trying-apache-flink/" title="Previous Post: Apache Flinkを試している">&laquo; Apache Flinkを試している</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+  <section>
+    <h1>Comments</h1>
+    <div id="disqus_thread" aria-live="polite"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+</div>
+  </section>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/03/25/gree-tech-talk-10/">GREE Tech Talk 10に行ってきた</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/02/26/trying-apache-flink/">Apache Flinkを試している</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/02/08/hadoop-slash-spark-conference-2016/">Hadoop / Spark Conference Japan 2016 に行ってきた</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/03/24/code-reading-of-fluentd-v0-dot-12-filter-and-label-related/">FluentdのFilter&Label周りのコードを読んだメモ</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2015/02/28/incompatible-character-encodings-in-fluentd/">Fluentdで Incompatible Character Encodingのエラーが出た話</a>
+      </li>
+    
+  </ul>
+</section>
+<section>
+  <h1>Categories</h1>
+    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/flink'>Flink (1)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (3)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li><li><a href='/blog/categories/spark'>Spark (1)</a></li><li><a href='/blog/categories/mian-qiang-hui'>勉強会 (1)</a></li></ul>
+</section>
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2016 - OGIBAYASHI Hironori -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+<script type="text/javascript">
+      var disqus_shortname = 'technotes-ogibayashi';
+      
+        
+        // var disqus_developer = 1;
+        var disqus_identifier = 'http://ogibayashi.github.io/blog/2016/03/25/gree-tech-talk-10/';
+        var disqus_url = 'http://ogibayashi.github.io/blog/2016/03/25/gree-tech-talk-10/';
+        var disqus_script = 'embed.js';
+      
+    (function () {
+      var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+      dsq.src = '//' + disqus_shortname + '.disqus.com/' + disqus_script;
+      (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    }());
+</script>
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
