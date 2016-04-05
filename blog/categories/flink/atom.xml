@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Flink | Tech Notes]]></title>
   <link href="http://ogibayashi.github.io/blog/categories/flink/atom.xml" rel="self"/>
   <link href="http://ogibayashi.github.io/"/>
-  <updated>2016-04-05T11:26:55+09:00</updated>
+  <updated>2016-04-05T12:18:17+09:00</updated>
   <id>http://ogibayashi.github.io/</id>
   <author>
     <name><![CDATA[OGIBAYASHI Hironori]]></name>
@@ -12,6 +12,184 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Apache Flink ContinuousProcessingTimeTriggerの話]]></title>
+    <link href="http://ogibayashi.github.io/blog/2016/04/05/apache-flink-continuousprocessingtimetrigger/"/>
+    <updated>2016-04-05T11:33:23+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2016/04/05/apache-flink-continuousprocessingtimetrigger</id>
+    <content type="html"><![CDATA[<p>(注: window周りのAPIを変えようという話(<a href="https://issues.apache.org/jira/browse/FLINK-3643">FLINK-3643</a>)があるので、以下で書かれている内容は近い将来obsoleteになる可能性があります)</p>
+
+<p>自分のところでは、ストリーム処理のユースケースとして、ある程度長期間のwindowでデータを保持しながら、集計結果は短い間隔で出力したい、というのがある。</p>
+
+<p>例えば、Norikra(Esper)のクエリだとこんな感じ。site_idごとに、過去3日間(72時間)のユニークユーザを集計し、結果は1分ごとに出力する、というもの。 集計対象のwindowは72時間のsliding time windowとなる。こういうwindowが長いケースは、Norikraだとプロセスを再起動したりした時にwindowの内容が全て失われるので辛い。Flinkでいい感じに実装したい。</p>
+
+<p>```sql
+SELECT</p>
+
+<pre><code>site_id,
+count(distinct userkey) as num_uu
+</code></pre>
+
+<p>FROM</p>
+
+<pre><code>viewer_log.win:time(3 day)
+</code></pre>
+
+<p>GROUP BY</p>
+
+<pre><code>site_id
+</code></pre>
+
+<p>OUTPUT LAST EVERY 1 min
+```</p>
+
+<p><a href="https://ci.apache.org/projects/flink/flink-docs-release-1.0/apis/streaming/windows.html">ドキュメント</a>を読むと、以下のようにwindowの定義とは別にいつ計算処理がトリガされるか、いつwindowの中身が削除されるか、を好きに設定できるように見える。</p>
+
+<p>```scala
+keyedStream</p>
+
+<pre><code>.window(SlidingEventTimeWindows.of(Time.seconds(5), Time.seconds(1))
+.trigger(CountTrigger.of(100))
+.evictor(CountEvictor.of(10));
+</code></pre>
+
+<p>```</p>
+
+<p>なので、上記のようなものは以下の様なコードで実現できるかと思った。ContinuousProcessingTimeTriggerは、指定した間隔で集計を実行するが、その際にwindowの内容の削除は行わない、というもの。</p>
+
+<p>```scala
+  def main(args: Array[String]) {
+//&hellip;</p>
+
+<pre><code>val input = env.readFileStream(fileName,100,FileMonitoringFunction.WatchType.PROCESS_ONLY_APPENDED)
+  .map(lineToTuple(_))
+  .keyBy(0)
+  .timeWindow(Time.of(3, TimeUnit.DAYS))
+  .trigger(ContinuousProcessingTimeTrigger.of(Time.seconds(60)))
+  .fold(("",new scala.collection.mutable.HashSet[String]())){(r,i) =&gt; { (i._1, r._2 + i._2)}}
+  .map{x =&gt; (new Timestamp(System.currentTimeMillis()), x._1, x._2.size)}
+</code></pre>
+
+<p>//&hellip;
+  }
+  def lineToTuple(line: String) = {</p>
+
+<pre><code>val x = line.split("\\W+") filter {_.nonEmpty}
+(x(0),x(1))
+</code></pre>
+
+<p>  }</p>
+
+<p>```</p>
+
+<p>が、実際には期待どおりに動かないことが分かった。(MLで教えてもらった。<a href="http://mail-archives.apache.org/mod_mbox/flink-user/201603.mbox/%3CCAMvK=YpGWZZQQnPVknGYY07AhieHE+9ELkq0i6Q_72FCghsm-Q@mail.gmail.com%3E">ここ</a>とか<a href="http://mail-archives.apache.org/mod_mbox/flink-user/201603.mbox/%3CCAMvK%3DYo2NMk3Hxhie5Cr9coHS7qZ8ecaGOHHXg96mDB7H9_7Nw%40mail.gmail.com%3E">ここ</a>)</p>
+
+<ul>
+<li>トリガが発火しないケースがある</li>
+<li>timeWindowが終了してもwindow内のデータが削除されない。結果、stateのサイズが増加する一方になる。(.trigger()を呼び出した時点で、元のtimeWindowのトリガは上書きされるらしい)</li>
+</ul>
+
+
+<p>って、これContinuousProcessingTimeTriggerは使えないのでは・・・。</p>
+
+<p>結局、ContinuousProcessingTimeTriggerに修正を入れたカスタムTriggerを作成し、これを使用することで期待する動作をするようになった。</p>
+
+<p>```java
+@PublicEvolving
+public class MyContinuousProcessingTimeTrigger<W extends TimeWindow> extends Trigger&lt;Object, W> {</p>
+
+<pre><code>private static final long serialVersionUID = 1L;
+
+private final long interval;
+
+private final ValueStateDescriptor&lt;Long&gt; stateDesc =
+        new ValueStateDescriptor&lt;&gt;("fire-timestamp", LongSerializer.INSTANCE, 0L);
+
+
+private MyContinuousProcessingTimeTrigger(long interval) {
+    this.interval = interval;
+}
+
+@Override
+public TriggerResult onElement(Object element, long timestamp, W window, TriggerContext ctx) throws Exception {
+    long currentTime = System.currentTimeMillis();
+
+    ValueState&lt;Long&gt; fireState = ctx.getPartitionedState(stateDesc);
+    long nextFireTimestamp = fireState.value();
+
+    if (nextFireTimestamp == 0) {
+        long start = currentTime - (currentTime % interval);
+        fireState.update(start + interval);
+
+        ctx.registerProcessingTimeTimer((start + interval));
+        return TriggerResult.CONTINUE;
+    }
+    if (currentTime &gt;= nextFireTimestamp) {
+        long start = currentTime - (currentTime % interval);
+        fireState.update(start + interval);
+
+        ctx.registerProcessingTimeTimer((start + interval));
+
+        return TriggerResult.FIRE;
+    }
+    return TriggerResult.CONTINUE;
+}
+
+@Override
+public TriggerResult onEventTime(long time, W window, TriggerContext ctx) throws Exception {
+    return TriggerResult.CONTINUE;
+}
+
+@Override
+public TriggerResult onProcessingTime(long time, W window, TriggerContext ctx) throws Exception {
+
+    ValueState&lt;Long&gt; fireState = ctx.getPartitionedState(stateDesc);
+    long nextFireTimestamp = fireState.value();
+
+    // only fire if an element didn't already fire
+    long currentTime = System.currentTimeMillis();
+    if (currentTime &gt;= nextFireTimestamp) {
+        long start = currentTime - (currentTime % interval);
+                    fireState.update(0L);
+                    if (nextFireTimestamp &gt;= window.getEnd()) {
+                       return TriggerResult.FIRE_AND_PURGE;
+                    }
+                    else {
+                        return TriggerResult.FIRE;
+                    }
+            }
+    return TriggerResult.CONTINUE;
+}
+
+@Override
+public void clear(W window, TriggerContext ctx) throws Exception {}
+
+@VisibleForTesting
+public long getInterval() {
+    return interval;
+}
+
+@Override
+public String toString() {
+    return "ContinuousProcessingTimeTrigger(" + interval + ")";
+}
+
+/**
+ * Creates a trigger that continuously fires based on the given interval.
+ *
+ * @param interval The time interval at which to fire.
+ * @param &lt;W&gt; The type of {@link Window Windows} on which this trigger can operate.
+ */
+public static &lt;W extends TimeWindow&gt; MyContinuousProcessingTimeTrigger&lt;W&gt; of(Time interval) {
+    return new MyContinuousProcessingTimeTrigger&lt;&gt;(interval.toMilliseconds());
+}
+</code></pre>
+
+<p>}
+```</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Apache Flinkの性能 - デフォルトのJSONパーサが遅かった話]]></title>
