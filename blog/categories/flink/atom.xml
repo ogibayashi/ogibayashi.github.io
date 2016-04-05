@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Flink | Tech Notes]]></title>
   <link href="http://ogibayashi.github.io/blog/categories/flink/atom.xml" rel="self"/>
   <link href="http://ogibayashi.github.io/"/>
-  <updated>2016-03-25T21:56:24+09:00</updated>
+  <updated>2016-04-05T11:26:55+09:00</updated>
   <id>http://ogibayashi.github.io/</id>
   <author>
     <name><![CDATA[OGIBAYASHI Hironori]]></name>
@@ -12,6 +12,138 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Apache Flinkの性能 - デフォルトのJSONパーサが遅かった話]]></title>
+    <link href="http://ogibayashi.github.io/blog/2016/04/05/apache-flink-performance/"/>
+    <updated>2016-04-05T10:50:12+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2016/04/05/apache-flink-performance</id>
+    <content type="html"><![CDATA[<p>軽くApache Flinkの性能を測ってみた. 構成としては、Fluentd(in_tail→out_kafka_buffered)→Kafka→Flink→Elasticsearchで、仮想アクセスログ的なものに対して、URIごとの件数を1分ごとに集計して出力する、というもの。
+メッセージフォーマットはJSON。</p>
+
+<p>```scala</p>
+
+<pre><code>val env = StreamExecutionEnvironment.getExecutionEnvironment
+env.enableCheckpointing(1000)
+</code></pre>
+
+<p>// &hellip;.</p>
+
+<pre><code>val stream = env
+  .addSource(new FlinkKafkaConsumer09[String]("kafka.dummy", new SimpleStringSchema(), properties))
+  .map{ json =&gt; JSON.parseFull(json).get.asInstanceOf[Map[String, AnyRef]] }
+  .map{ x =&gt; x.get("uri") match {
+    case Some(y) =&gt; (y.asInstanceOf[String],1)
+    case None =&gt; ("", 1)
+  }}
+  .keyBy(0)
+  .timeWindow(Time.of(1, TimeUnit.MINUTES))
+  .sum(1)
+  .map{ x =&gt; (System.currentTimeMillis(), x)}
+  .addSink(new ElasticsearchSink(config, transports, new IndexRequestBuilder[Tuple2[Long, Tuple2[String, Int]]]  {
+    override def createIndexRequest(element: Tuple2[Long, Tuple2[String, Int]], ctx: RuntimeContext): IndexRequest = {
+      val json = new HashMap[String, AnyRef]
+      json.put("@timestamp", new Timestamp(element._1))
+      json.put("uri", element._2._1)
+      json.put("count", element._2._2: java.lang.Integer)
+      println("SENDING: " + element)
+      Requests.indexRequest.index("dummy2").`type`("my-type").source(json)
+    }
+  }))
+</code></pre>
+
+<p>```</p>
+
+<p>環境は以下の通り</p>
+
+<ul>
+<li>Kafka : 8vCPU, 8GBMemoryのVM*3, HDP2.4 (Kafka-0.9)
+
+<ul>
+<li>パーティション数は1なので、実質broker1台</li>
+</ul>
+</li>
+<li>Flink : JobManager, TaskManagerともに8vCPU, 8GBMemoryのVM (Flink-1.0.0)
+
+<ul>
+<li>TaskManagerは3台だが、ジョブ並列度を1にしたので1台でしか動かない状態</li>
+</ul>
+</li>
+<li>Elasticsearch: 4CPU, 4GB MemoryのVM*1 (Elasticsearch 1.7.2)</li>
+</ul>
+
+
+<p>URIは9種類なので、Elasticsearchには毎分9レコードが出力されることにいなる。 Elasticsearchに出力されたURIごとの件数を1分単位に合計したものを、Flinkのスループットと考える。 レコードの生成には <a href="https://github.com/sonots/dummer">dummer</a>を使用した。</p>
+
+<p>で、普通にやったら2,000msg/secの入力を与えて、89,000msg/min = 1,483msg/secしか処理できなかった。FlinkプロセスのCPUが100%(1CPU使いきり)となり、Kafkaのlagが増えていく状態。
+チェックポイント外したりESへの出力をやめたりしてみたのだけど、性能はさほど変わらず。</p>
+
+<p>何にCPUを食っているんだろう？と思って、Flinkプロセスのjstackを何回か取ってみたら、こんな感じでJSONのパースを実行中であるケースが殆んどだった。</p>
+
+<p>```</p>
+
+<pre><code>    at scala.util.parsing.combinator.Parsers$$anon$2.apply(Parsers.scala:881)
+    at scala.util.parsing.json.JSON$.parseRaw(JSON.scala:51)
+    at scala.util.parsing.json.JSON$.parseFull(JSON.scala:65)
+    at KafkaTest3$$anonfun$1.apply(KafkaTest3.scala:46)
+    at KafkaTest3$$anonfun$1.apply(KafkaTest3.scala:46)
+    at org.apache.flink.streaming.api.scala.DataStream$$anon$4.map(DataStream.scala:485)
+</code></pre>
+
+<p>```</p>
+
+<p>ということで、パーサをJacksonにしてみた。</p>
+
+<p>```scala
+  val mapper = new ObjectMapper()</p>
+
+<p>  def main(args: Array[String]) {</p>
+
+<pre><code>val env = StreamExecutionEnvironment.getExecutionEnvironment
+env.enableCheckpointing(1000)
+
+// ...
+
+val stream = env
+ .addSource(new FlinkKafkaConsumer09[String]("kafka.json", new SimpleStringSchema(), properties))
+  .map(parseJson(_))
+  .map{ x=&gt; (x.get("uri").asInstanceOf[String], 1)}
+  .keyBy(0)
+  .timeWindow(Time.of(1, TimeUnit.MINUTES))
+  .sum(1)
+  .map{ x =&gt; (System.currentTimeMillis(), x)}
+  .addSink(new ElasticsearchSink(config, transports, new IndexRequestBuilder[Tuple2[Long, Tuple2[String, Int]]]  {
+    override def createIndexRequest(element: Tuple2[Long, Tuple2[String, Int]], ctx: RuntimeContext): IndexRequest = {
+      val json = new HashMap[String, AnyRef]
+      json.put("@timestamp", new Timestamp(element._1))
+      json.put("uri", element._2._1)
+      json.put("count", element._2._2: java.lang.Integer)
+      Requests.indexRequest.index("dummy2").`type`("my-type").source(json)
+    }
+  }))
+
+env.execute("KafkaTest9")
+</code></pre>
+
+<p>  }</p>
+
+<p>  def parseJson(x: String): Map[String,AnyRef] = {</p>
+
+<pre><code>mapper.readValue(x,classOf[Map[String,AnyRef]])
+</code></pre>
+
+<p>  }</p>
+
+<p>```</p>
+
+<p>そうしたら、スループットが大幅に向上して900,000msg/min=15,000msg/secを20%程度のCPU(1CPUの5分の1)で処理できた。</p>
+
+<p><a href="http://www.slideshare.net/nestorhp/scala-json-features-and-performance">http://www.slideshare.net/nestorhp/scala-json-features-and-performance</a> にScalaで使えるJSONライブラリを比較したスライドがあるのだけど、
+これを見るとScala標準のパーサと、その他のライブラリで速度が3桁くらい違う。えーーー、、、</p>
+
+<p>ともあれ、十分に実用的な性能が出そうであることがわかったので良かった。</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Apache Flinkを試している]]></title>
