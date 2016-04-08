@@ -1,0 +1,377 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Apache Flinkのstate管理について - Tech Notes</title>
+  <meta name="author" content="OGIBAYASHI Hironori">
+
+  
+  <meta name="description" content="はじめに ストリーム処理の中で、処理をstatefulにしたい、という要求はよくある。例えば、1時間のtime windowで件数を集計している場合、ストリームが流れるにつれて内部で保持しているカウンタは増加していく.
+そして、障害等で再起動をした時とかには、そのカウンタの値も一緒に復旧したい. &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://ogibayashi.github.io/blog/2016/04/08/flink-state-management">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="Tech Notes" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">Tech Notes</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:ogibayashi.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Apache Flinkのstate管理について</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-04-08T12:09:26+09:00" pubdate data-updated="true">Apr 8<span>th</span>, 2016</time>
+        
+           | <a href="#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><h2>はじめに</h2>
+
+<p>ストリーム処理の中で、処理をstatefulにしたい、という要求はよくある。例えば、1時間のtime windowで件数を集計している場合、ストリームが流れるにつれて内部で保持しているカウンタは増加していく.
+そして、障害等で再起動をした時とかには、そのカウンタの値も一緒に復旧したい.</p>
+
+<h2>Flinkにおけるstateの保存</h2>
+
+<p>これに対して、Apache Flinkは定期的に処理状態のスナップショットを取得する、という方法で対応している.
+そして、分散環境でまともに全てのスナップショットを取るのは辛いので、分散してスナップショットを取るようにしている. 具体的には<a href="https://ci.apache.org/projects/flink/flink-docs-master/internals/stream_checkpointing.html">ここ</a> に詳しいが、ストリームのソースから定期的にBarrierと呼ばれる印を流して、各オペレータはこれを受け取るとスナップショットを保存するようになっている. こうすることで、処理全体を止めずに一貫性のあるスナップショットを取れるよね、という話. 障害時にはスナップショットから状態を復旧し、スナップショット以降のログをリプレイすることで処理を継続する.</p>
+
+<p>スナップショットの保存先は、以下から選択することができる. グローバルのデフォルトを設定することも、ジョブ単位でそれを上書きすることも可能.  (詳しくは<a href="https://ci.apache.org/projects/flink/flink-docs-master/apis/streaming/state_backends.html">ここ</a>)</p>
+
+<ul>
+<li>MemoryStateBacked
+
+<ul>
+<li>デフォルト. チェックポイントの際にJobManagerのメモリ上に状態を保持する. デフォルトはサイズが5MBまで.</li>
+</ul>
+</li>
+<li>FsStateBackend
+
+<ul>
+<li>ファイルシステムに保持する. 最新の状態はTaskManagerのメモリに保持し、チェックポイントの際にファイルシステムに保存する. ファイルシステムはローカルでもHDFSでも良いが、障害時に別ノードで復旧することを考えるとHDFSになるだろう.</li>
+</ul>
+</li>
+<li>RocksDBStateBackend
+
+<ul>
+<li>最新の状態はTaskManagerローカルファイルシステム上のRocksDBに保持し、チェックポイントの際にそれをFsStateBackendと同じようにファイルシステムに保存する. スループットは若干落ちるが、大量のstateを保持することができる.</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>実験</h2>
+
+<p>とは言え、処理によってはstateが大きくなるケースもあるわけで、そういう時にどうなるんだろう？と思って実験してみた.
+環境はFlink 1.0.0でKafka, Flink, HDFSは物理サーバ.</p>
+
+<p>こんな感じで、foobarというフィールドに100バイトのランダム文字列を入れて、それのdistinct countを取る. 重複を判断するためには、過去の値をすべて持たないといけないので状態は大きくなる.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ head -n 1 dummy_log.aa 
+</span><span class='line'>id:0000 time:[2016-04-05 12:40:57]      level:DEBUG     method:POST     uri:/api/v1/people1     reqtime:3.053540515830725       foobar:dNjtvYKxgyym6bMNxUyrLznijuZqZfpVasJyXZDttoNGbj5GFk</span></code></pre></td></tr></table></div></figure>
+
+
+<p>こんな感じのコードで、処理を記述した(MyContinuousProcessingTimeTriggerはデフォルトのContinuousProcessingTimeTriggerに若干の改修を入れたもの).
+保存先はHDFSとしている. timeWindowAllなので、処理は分散されず単一のスレッドで処理される.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class='scala'><span class='line'><span class="k">val</span> <span class="n">stream</span> <span class="k">=</span> <span class="n">env</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">addSource</span><span class="o">(</span><span class="k">new</span> <span class="nc">FlinkKafkaConsumer09</span><span class="o">[</span><span class="kt">String</span><span class="o">](</span><span class="s">&quot;kafka.json2&quot;</span><span class="o">,</span> <span class="k">new</span> <span class="nc">SimpleStringSchema</span><span class="o">(),</span> <span class="n">properties</span><span class="o">))</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">.</span><span class="n">map</span><span class="o">(</span><span class="n">parseJson</span><span class="o">(</span><span class="k">_</span><span class="o">))</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">timeWindowAll</span><span class="o">(</span><span class="nc">Time</span><span class="o">.</span><span class="n">of</span><span class="o">(</span><span class="mi">10</span><span class="o">,</span> <span class="nc">TimeUnit</span><span class="o">.</span><span class="nc">DAYS</span><span class="o">))</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">trigger</span><span class="o">(</span><span class="nc">MyContinuousProcessingTimeTrigger</span><span class="o">.</span><span class="n">of</span><span class="o">(</span><span class="nc">Time</span><span class="o">.</span><span class="n">seconds</span><span class="o">(</span><span class="mi">5</span><span class="o">)))</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">fold</span><span class="o">(</span><span class="nc">Set</span><span class="o">[</span><span class="kt">String</span><span class="o">]()){(</span><span class="n">r</span><span class="o">,</span><span class="n">i</span><span class="o">)</span> <span class="k">=&gt;</span> <span class="o">{</span> <span class="n">r</span> <span class="o">+</span> <span class="n">i</span><span class="o">}}</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">map</span><span class="o">{</span><span class="n">x</span> <span class="k">=&gt;</span> <span class="o">(</span><span class="nc">System</span><span class="o">.</span><span class="n">currentTimeMillis</span><span class="o">(),</span> <span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="o">)}</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">addSink</span><span class="o">(</span><span class="k">new</span> <span class="nc">ElasticsearchSink</span><span class="o">(</span><span class="n">config</span><span class="o">,</span> <span class="n">transports</span><span class="o">,</span> <span class="k">new</span> <span class="nc">IndexRequestBuilder</span><span class="o">[</span><span class="kt">Tuple2</span><span class="o">[</span><span class="kt">Long</span>, <span class="kt">Int</span><span class="o">]]</span>  <span class="o">{</span>
+</span><span class='line'>    <span class="k">override</span> <span class="k">def</span> <span class="n">createIndexRequest</span><span class="o">(</span><span class="n">element</span><span class="k">:</span> <span class="kt">Tuple2</span><span class="o">[</span><span class="kt">Long</span>, <span class="kt">Int</span><span class="o">],</span> <span class="n">ctx</span><span class="k">:</span> <span class="kt">RuntimeContext</span><span class="o">)</span><span class="k">:</span> <span class="kt">IndexRequest</span> <span class="o">=</span> <span class="o">{</span>
+</span><span class='line'>      <span class="k">val</span> <span class="n">json</span> <span class="k">=</span> <span class="k">new</span> <span class="nc">HashMap</span><span class="o">[</span><span class="kt">String</span>, <span class="kt">AnyRef</span><span class="o">]</span>
+</span><span class='line'>      <span class="n">json</span><span class="o">.</span><span class="n">put</span><span class="o">(</span><span class="s">&quot;@timestamp&quot;</span><span class="o">,</span> <span class="k">new</span> <span class="nc">Timestamp</span><span class="o">(</span><span class="n">element</span><span class="o">.</span><span class="n">_1</span><span class="o">))</span>
+</span><span class='line'>      <span class="n">json</span><span class="o">.</span><span class="n">put</span><span class="o">(</span><span class="s">&quot;count&quot;</span><span class="o">,</span> <span class="n">element</span><span class="o">.</span><span class="n">_2</span><span class="k">:</span> <span class="kt">java.lang.Integer</span><span class="o">)</span>
+</span><span class='line'>      <span class="nc">Requests</span><span class="o">.</span><span class="n">indexRequest</span><span class="o">.</span><span class="n">index</span><span class="o">(</span><span class="s">&quot;dummy3&quot;</span><span class="o">).</span><span class="n">`type`</span><span class="o">(</span><span class="s">&quot;my-type&quot;</span><span class="o">).</span><span class="n">source</span><span class="o">(</span><span class="n">json</span><span class="o">)</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>  <span class="o">}))</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>まずは、260万件のログを送ってスナップショットのサイズを確認してみる. 送信したログのサイズ(100bytes×260万件)とほぼ同じ. そして、同じログを2回投入しても(distinct countなので
+)サイズは増えない. 処理内部で集計した結果を保存している模様.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class='scala'><span class='line'><span class="n">$</span> <span class="n">cat</span> <span class="n">dummy_log</span><span class="o">.</span><span class="n">aa</span> <span class="o">&gt;&gt;</span> <span class="o">/</span><span class="n">tmp</span><span class="o">/</span><span class="n">dummy_log2</span><span class="o">.</span><span class="n">log</span>
+</span><span class='line'><span class="n">$</span> <span class="n">hadoop</span> <span class="n">fs</span> <span class="o">-</span><span class="n">du</span>  <span class="o">/</span><span class="n">apps</span><span class="o">/</span><span class="n">flink</span><span class="o">/</span><span class="n">checkpoints</span><span class="o">/</span><span class="mi">9005988</span><span class="n">ca4dc6e871d50c2b310ed0a63</span>
+</span><span class='line'><span class="mi">26000230</span>  <span class="o">/</span><span class="n">apps</span><span class="o">/</span><span class="n">flink</span><span class="o">/</span><span class="n">checkpoints</span><span class="o">/</span><span class="mi">9005988</span><span class="n">ca4dc6e871d50c2b310ed0a63</span><span class="o">/</span><span class="n">chk</span><span class="o">-</span><span class="mi">183</span>
+</span><span class='line'><span class="n">$</span> <span class="n">cat</span> <span class="n">dummy_log</span><span class="o">.</span><span class="n">aa</span> <span class="o">&gt;&gt;</span> <span class="o">/</span><span class="n">tmp</span><span class="o">/</span><span class="n">dummy_log2</span><span class="o">.</span><span class="n">log</span>
+</span><span class='line'><span class="n">$</span> <span class="n">hadoop</span> <span class="n">fs</span> <span class="o">-</span><span class="n">du</span>  <span class="o">/</span><span class="n">apps</span><span class="o">/</span><span class="n">flink</span><span class="o">/</span><span class="n">checkpoints</span><span class="o">/</span><span class="mi">9005988</span><span class="n">ca4dc6e871d50c2b310ed0a63</span>
+</span><span class='line'><span class="mi">26000230</span>  <span class="o">/</span><span class="n">apps</span><span class="o">/</span><span class="n">flink</span><span class="o">/</span><span class="n">checkpoints</span><span class="o">/</span><span class="mi">9005988</span><span class="n">ca4dc6e871d50c2b310ed0a63</span><span class="o">/</span><span class="n">chk</span><span class="o">-</span><span class="mi">196</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>そして、その時のチェックポイント時間はJobManagerのログから確認できる. 大体6秒くらいかかる. TaskManagerのCPU使用率は定常的に高い.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='scala'><span class='line'><span class="nc">INFO</span>  <span class="n">org</span><span class="o">.</span><span class="n">apache</span><span class="o">.</span><span class="n">flink</span><span class="o">.</span><span class="n">runtime</span><span class="o">.</span><span class="n">checkpoint</span><span class="o">.</span><span class="nc">CheckpointCoordinator</span>     <span class="o">-</span> <span class="nc">Completed</span> <span class="n">checkpoint</span> <span class="mi">43</span> <span class="o">(</span><span class="n">in</span> <span class="mi">6291</span> <span class="n">ms</span><span class="o">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>さらに、260万件を追加で投入するとチェックポイントに10秒〜数十秒かかるようになった. ジョブを実行しているTaskManagerは
+CPU100%になり、スループットも大幅に落ちていた.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class='scala'><span class='line'><span class="nc">INFO</span>  <span class="n">org</span><span class="o">.</span><span class="n">apache</span><span class="o">.</span><span class="n">flink</span><span class="o">.</span><span class="n">runtime</span><span class="o">.</span><span class="n">checkpoint</span><span class="o">.</span><span class="nc">CheckpointCoordinator</span>     <span class="o">-</span> <span class="nc">Completed</span> <span class="n">checkpoint</span> <span class="mi">145</span> <span class="o">(</span><span class="n">in</span> <span class="mi">41835</span> <span class="n">ms</span><span class="o">)</span>
+</span><span class='line'><span class="nc">INFO</span>  <span class="n">org</span><span class="o">.</span><span class="n">apache</span><span class="o">.</span><span class="n">flink</span><span class="o">.</span><span class="n">runtime</span><span class="o">.</span><span class="n">checkpoint</span><span class="o">.</span><span class="nc">CheckpointCoordinator</span>     <span class="o">-</span> <span class="nc">Completed</span> <span class="n">checkpoint</span> <span class="mi">146</span> <span class="o">(</span><span class="n">in</span> <span class="mi">13530</span> <span class="n">ms</span><span class="o">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><a href="http://mail-archives.apache.org/mod_mbox/flink-user/201604.mbox/%3CCAMvK%3DYpTb6yZiv9ioL7%2Bmdn0W5Q3fRyNL210aGYcjzcbXQWxqg%40mail.gmail.com%3E">MLで聞いてみた</a> ところ、バックエンドでRocksDBを
+試してみたら、とアドバイスをもらったのでやってみたが、変わらなかった. この処理の場合、状態を保存するストアには1レコードしか入らなくて、その値が非常に大きいので、効果が出なかった模様.</p>
+
+<h2>思ったことなど</h2>
+
+<ul>
+<li>ユニークユーザ数等をカウントするようなケースだと、値の種類が数千万というのもあり得るので、上のような性能だと辛い. そして、このような処理の場合、最終的には一箇所にまとめて
+数を数える感じになるので、分散スナップショットの恩恵も受けづらい.</li>
+<li>現行のFlinkだと、スナップショットのたびに保持しているデータを全て書き出すので、incremental snapshotが導入されれば改善されるかも.</li>
+<li>今の時点での対応としては、値のリストをFlinkに保持せずに外部のデータストア(Redisとか)に保持するというのが一つの解決策. その場合、デメリットとしてはスケールアウトが
+制限されることと、障害時などにログがリプレイされることへの対応. ただ、後者については処理の性質上、何度同じデータを投入しても結果は変わらないので、問題にならない.</li>
+<li>もしくは、HyperLogLogのような推定アルゴリズムを使って、精度と引き換えに状態のサイズを削減するか.</li>
+</ul>
+
+
+<p>試しにFlinkで受け取った値をRedisのSETに入れて同じ処理を実現してみたら、あっさり1000万件くらい処理できた. stateが小さい、または分散される場合はFlinkに任せて、
+今回のような一部のケースでは外部のデータストアを使う、というのが現実的だろうか、と思っているところ.</p>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">OGIBAYASHI Hironori</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2016-04-08T12:09:26+09:00" pubdate data-updated="true">Apr 8<span>th</span>, 2016</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/flink/'>Flink</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://ogibayashi.github.io/blog/2016/04/08/flink-state-management/" data-via="" data-counturl="http://ogibayashi.github.io/blog/2016/04/08/flink-state-management/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2016/04/05/apache-flink-continuousprocessingtimetrigger/" title="Previous Post: Apache Flink ContinuousProcessingTimeTriggerの話">&laquo; Apache Flink ContinuousProcessingTimeTriggerの話</a>
+      
+      
+    </p>
+  </footer>
+</article>
+
+  <section>
+    <h1>Comments</h1>
+    <div id="disqus_thread" aria-live="polite"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+</div>
+  </section>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/04/08/flink-state-management/">Apache Flinkのstate管理について</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/04/05/apache-flink-continuousprocessingtimetrigger/">Apache Flink ContinuousProcessingTimeTriggerの話</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/04/05/apache-flink-performance/">Apache Flinkの性能 - デフォルトのJSONパーサが遅かった話</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/03/25/gree-tech-talk-10/">GREE Tech Talk 10に行ってきた</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/02/26/trying-apache-flink/">Apache Flinkを試している</a>
+      </li>
+    
+  </ul>
+</section>
+<section>
+  <h1>Categories</h1>
+    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/esper'>Esper (1)</a></li><li><a href='/blog/categories/flink'>Flink (4)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (3)</a></li><li><a href='/blog/categories/norikra'>Norikra (1)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li><li><a href='/blog/categories/spark'>Spark (1)</a></li><li><a href='/blog/categories/mian-qiang-hui'>勉強会 (1)</a></li></ul>
+</section>
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2016 - OGIBAYASHI Hironori -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+<script type="text/javascript">
+      var disqus_shortname = 'technotes-ogibayashi';
+      
+        
+        // var disqus_developer = 1;
+        var disqus_identifier = 'http://ogibayashi.github.io/blog/2016/04/08/flink-state-management/';
+        var disqus_url = 'http://ogibayashi.github.io/blog/2016/04/08/flink-state-management/';
+        var disqus_script = 'embed.js';
+      
+    (function () {
+      var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+      dsq.src = '//' + disqus_shortname + '.disqus.com/' + disqus_script;
+      (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    }());
+</script>
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

@@ -9,7 +9,7 @@
   <meta name="author" content="OGIBAYASHI Hironori">
 
   
-  <meta name="description" content="Fluentd v0.12のin/out_forwardでAt-least-once semanticsがサポートされるようになった. 今まではアプリケーションレイヤでの到達確認がなかったので、一部のネットワーク障害などのケースでは、送信されたように見えて実は送信されていない、 &hellip;">
+  <meta name="description" content="HDP2.2を手元のVMで試しにセットアップしてみたが、色々ハマった部分があったのでメモ 環境 CentOS6.3のVMを7つ用意して、以下のようにHA含めて構成することにした. master1: NameNode(active), ZKFC, JournalNode, Zookeeper &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -63,6 +63,707 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/01/06/hdp2-dot-2-installation-memo/">HDP2.2をセットアップするためにハマった箇所のメモ</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2015-01-06T20:53:54+09:00" pubdate data-updated="true">Jan 6<span>th</span>, 2015</time>
+        
+           | <a href="/blog/2015/01/06/hdp2-dot-2-installation-memo/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2015/01/06/hdp2-dot-2-installation-memo/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>HDP2.2を手元のVMで試しにセットアップしてみたが、色々ハマった部分があったのでメモ</p>
+
+<h2>環境</h2>
+
+<p>CentOS6.3のVMを7つ用意して、以下のようにHA含めて構成することにした.</p>
+
+<ul>
+<li>master1: NameNode(active), ZKFC, JournalNode, Zookeeper</li>
+<li>master2: NameNode(standby), ZKFC, JournalNode, ResourceManager(standby), Zookeeper</li>
+<li>master3: JournalNode, ResourceManager(active), Zookeeper, HiveServer2, MySQL</li>
+<li>slaves(3ノード): DataNode, NodeManager</li>
+<li>client: MR/Tez client</li>
+</ul>
+
+
+<p>ドキュメントは、こちらの&#8221;Installing HDP Manually&#8221;を使用.
+<a href="http://docs.hortonworks.com/HDPDocuments/HDP2/HDP-2.2.0/HDP_Man_Install_v22/index.html">http://docs.hortonworks.com/HDPDocuments/HDP2/HDP-2.2.0/HDP_Man_Install_v22/index.html</a></p>
+
+<h2>トラブルシュートなどのメモ</h2>
+
+<p>以下、ドキュメントには無いが変更しないといけなかったもの、引っかかったトラブルなど. 単に自分が手順を見落としていたり、間違っていたために発生したものもあるかも.</p>
+
+<h3>全般</h3>
+
+<ul>
+<li>基本的に、設定はcompanion filesのものをベースにする. 2.1を動かしていた際の設定もあったが、大分変わっているようなので一旦companion filesのをまるごと持ってきた</li>
+<li>インストールのベースが<code>/usr/hdp/2.2.0.0-2041/</code>になっているが、実際のスクリプトの中では<code>/usr/lib/hadoop</code>等を参照しているものもあるため、<code>/usr/hdp/2.2.0.0-2041/hadoop -&gt; /usr/hdp/2.2.0.0-2041/hadoop</code> 等のようなシンボリックリンクをひと通り作成した.</li>
+<li>Daemonの起動スクリプト類は<code>hadoop-hdfs-namenode</code>等のような別RPMになっている.これらのインストール先は<code>/usr/hdp/2.2.0.0-2041/etc/</code>となっているため、<code>/etc/init.d</code>の下などに、こちらもシンボリックリンクを作成した. ちなみに、<code>/etc/default</code>の下に置くファイルも用意されているが、initスクリプトをみてもこれらを読むようには見えない.</li>
+<li>マニュアルにはcompanion filesに含まれる、 <code>usersAndGroups.sh</code>, <code>directories.sh</code> を設定した上で <code>~/.bash_profile</code>でこれらのファイルを読む設定を入れるようにあるが、daemonの動作がbash_profileに依存するのが気持ち悪かったので、それはやってない. それに起因したトラブルもあるかも.</li>
+</ul>
+
+
+<h3>Zookeeperのセットアップ</h3>
+
+<ul>
+<li>initスクリプト内で呼ばれる、<code>zookeeper-server</code>,<code>zookeeper-server-initialize</code>は<code>/usr/hdp/2.2.0.0-2041/zookeeper/bin/</code>にあるので、これらを<code>/usr/bin</code>下に置くよう、シンボリックリンクを作成した</li>
+</ul>
+
+
+<h3>service <hadoop daemon> start の戻り値が3</h3>
+
+<p>また、停止に失敗したりする.</p>
+
+<p>以下の様な感じ.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># service hadoop-yarn-resourcemanager start
+</span><span class='line'>Starting Hadoop resourcemanager:                           [  OK  ]
+</span><span class='line'>starting resourcemanager, logging to /var/log/hadoop/yarn/yarn-yarn-resourcemanager-hdp15.hadoop.local.out
+</span><span class='line'>[root@hdp15 init.d]# echo $?
+</span><span class='line'>3</span></code></pre></td></tr></table></div></figure>
+
+
+<p>initスクリプト内で以下のようにPIDFILEを設定しているが、環境変数が正しく設定されていないと、PIDFILEがうまく作られずにこのような状態になる.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>PIDFILE="$HADOOP_PID_DIR/yarn-$YARN_IDENT_STRING-resourcemanager.pid"</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>yarn-env.sh</code>で<code>HADOOP_PID_DIR</code>, <code>YARN_IDENT_STRING</code>, <code>hadoop-env.sh</code>でも<code>HADOOP_PID_DIR</code>を設定するようにした.</p>
+
+<h3>HistoryServerでPermission Deninedが発生</h3>
+
+<p>以下の様なエラーが発生. (何をしようとして発生したのか忘れた&hellip;)</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2014-12-27 03:15:05,824 ERROR hs.HistoryFileManager (HistoryFileManager.java:scanIfNeeded(285)) - Error while trying to scan the directory hdfs://hdpexperiment:
+</span><span class='line'>8020/mr-history/tmp/client
+</span><span class='line'>org.apache.hadoop.security.AccessControlException: Permission denied: user=mapred, access=READ_EXECUTE, inode="/mr-history/tmp/client":client:hdfs:drwxrwx---
+</span><span class='line'>        at org.apache.hadoop.hdfs.server.namenode.FSPermissionChecker.checkFsPermission(FSPermissionChecker.java:271)
+</span><span class='line'>        at org.apache.hadoop.hdfs.server.namenode.FSPermissionChecker.check(FSPermissionChecker.java:257)
+</span><span class='line'>        at org.apache.hadoop.hdfs.server.namenode.FSPermissionChecker.checkPermission(FSPermissionChecker.java:185)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>HDFSのパーミッションを見ると以下のようになっており、<code>/mr-history/tmp/client</code>に対して<code>mapred</code>ユーザのパーミッションが無い.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># sudo -u hdfs hdfs dfs -ls /
+</span><span class='line'>Found 6 items
+</span><span class='line'>drwxrwxrwt   - yarn   yarn            0 2014-12-27 03:11 /app-logs
+</span><span class='line'>drwxr-xr-x   - hdfs   hdfs            0 2014-12-27 02:43 /apps
+</span><span class='line'>drwxr-xr-x   - hdfs   hadoop          0 2014-12-26 16:17 /hdp
+</span><span class='line'>drwxr-xr-x   - mapred hdfs            0 2014-12-26 16:16 /mr-history
+</span><span class='line'>drwxrwxrwt   - hdfs   hdfs            0 2014-12-27 03:11 /tmp
+</span><span class='line'>drwxr-xr-x   - hdfs   hdfs            0 2014-12-27 02:33 /user
+</span><span class='line'># sudo -u hdfs hdfs dfs -ls /mr-history
+</span><span class='line'>Found 2 items
+</span><span class='line'>drwxrwxrwt   - mapred hdfs          0 2014-12-26 16:16 /mr-history/done
+</span><span class='line'>drwxrwxrwt   - mapred hdfs          0 2014-12-26 23:27 /mr-history/tmp
+</span><span class='line'># sudo -u hdfs hdfs dfs -ls /mr-history/tmp
+</span><span class='line'>Found 1 items
+</span><span class='line'>drwxrwx---   - client hdfs          0 2014-12-27 00:14 /mr-history/tmp/client
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>以下のように、<code>/mr-history</code>以下のgroupを<code>mapredと</code>することで対応.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># sudo -u hdfs hdfs dfs -chgrp -R mapred /mr-history</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>MapReduceジョブ実行中のエラー. Slaveにつながらない</h3>
+
+<p>exampleのpiを実行した際のエラー</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>14/12/30 11:17:59 INFO ipc.Client: Retrying connect to server: hdp18.hadoop.local/10.29.254.69:39110. Already tried 0 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+</span><span class='line'>14/12/30 11:18:00 INFO ipc.Client: Retrying connect to server: hdp18.hadoop.local/10.29.254.69:39110. Already tried 1 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+</span><span class='line'>14/12/30 11:18:01 INFO ipc.Client: Retrying connect to server: hdp18.hadoop.local/10.29.254.69:39110. Already tried 2 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+</span><span class='line'>14/12/30 11:18:29 INFO ipc.Client: Retrying connect to server: hdp17.hadoop.local/10.29.254.67:43296. Already tried 0 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+</span><span class='line'>14/12/30 11:18:30 INFO ipc.Client: Retrying connect to server: hdp17.hadoop.local/10.29.254.67:43296. Already tried 1 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+</span><span class='line'>14/12/30 11:18:31 INFO ipc.Client: Retrying connect to server: hdp17.hadoop.local/10.29.254.67:43296. Already tried 2 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+</span><span class='line'>14/12/30 11:18:31 INFO mapreduce.Job: Job job_1419895534181_0002 failed with state FAILED due to: Application application_1419895534181_0002 failed 2 times due to AM Container for appattempt_1419895534181_0002_000002 exited with  exitCode: 255
+</span><span class='line'>For more detailed output, check application tracking page:http://hdp16.hadoop.local:8088/proxy/application_1419895534181_0002/Then, click on links to logs of each attempt.
+</span><span class='line'>Diagnostics: Exception from container-launch.
+</span><span class='line'>Container id: container_1419895534181_0002_02_000001
+</span><span class='line'>Exit code: 255
+</span><span class='line'>Stack trace: ExitCodeException exitCode=255: 
+</span><span class='line'>        at org.apache.hadoop.util.Shell.runCommand(Shell.java:538)
+</span><span class='line'>        at org.apache.hadoop.util.Shell.run(Shell.java:455)
+</span><span class='line'>        at org.apache.hadoop.util.Shell$ShellCommandExecutor.execute(Shell.java:715)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.nodemanager.DefaultContainerExecutor.launchContainer(DefaultContainerExecutor.java:211)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainerLaunch.call(ContainerLaunch.java:302)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainerLaunch.call(ContainerLaunch.java:82)
+</span><span class='line'>        at java.util.concurrent.FutureTask.run(FutureTask.java:262)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+</span><span class='line'>        at java.lang.Thread.run(Thread.java:745)
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>Container exited with a non-zero exit code 255
+</span><span class='line'>Failing this attempt. Failing the application.
+</span><span class='line'>14/12/30 11:18:31 INFO mapreduce.Job: Counters: 0
+</span><span class='line'>Job Finished in 99.802 seconds
+</span><span class='line'>java.io.FileNotFoundException: File does not exist: hdfs://hdpexperiment/user/hdfs/QuasiMonteCarlo_1419905807487_296085847/out/reduce-out
+</span><span class='line'>        at org.apache.hadoop.hdfs.DistributedFileSystem$18.doCall(DistributedFileSystem.java:1122)
+</span><span class='line'>        at org.apache.hadoop.hdfs.DistributedFileSystem$18.doCall(DistributedFileSystem.java:1114)
+</span><span class='line'>        at org.apache.hadoop.fs.FileSystemLinkResolver.resolve(FileSystemLinkResolver.java:81)
+</span><span class='line'>        at org.apache.hadoop.hdfs.DistributedFileSystem.getFileStatus(DistributedFileSystem.java:1114)
+</span><span class='line'>        at org.apache.hadoop.io.SequenceFile$Reader.&lt;init&gt;(SequenceFile.java:1750)
+</span><span class='line'>        at org.apache.hadoop.io.SequenceFile$Reader.&lt;init&gt;(SequenceFile.java:1774)
+</span><span class='line'>        at org.apache.hadoop.examples.QuasiMonteCarlo.estimatePi(QuasiMonteCarlo.java:314)
+</span><span class='line'>        at org.apache.hadoop.examples.QuasiMonteCarlo.run(QuasiMonteCarlo.java:354)
+</span><span class='line'>        at org.apache.hadoop.util.ToolRunner.run(ToolRunner.java:70)
+</span><span class='line'>        at org.apache.hadoop.examples.QuasiMonteCarlo.main(QuasiMonteCarlo.java:363)
+</span><span class='line'>        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+</span><span class='line'>        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+</span><span class='line'>        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+</span><span class='line'>        at java.lang.reflect.Method.invoke(Method.java:606)
+</span><span class='line'>        at org.apache.hadoop.util.ProgramDriver$ProgramDescription.invoke(ProgramDriver.java:71)
+</span><span class='line'>        at org.apache.hadoop.util.ProgramDriver.run(ProgramDriver.java:144)
+</span><span class='line'>        at org.apache.hadoop.examples.ExampleDriver.main(ExampleDriver.java:74)
+</span><span class='line'>        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+</span><span class='line'>        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+</span><span class='line'>        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+</span><span class='line'>        at java.lang.reflect.Method.invoke(Method.java:606)
+</span><span class='line'>        at org.apache.hadoop.util.RunJar.run(RunJar.java:221)
+</span><span class='line'>        at org.apache.hadoop.util.RunJar.main(RunJar.java:136)
+</span><span class='line'>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>yarn logs</code>ではログが見えなかったので、実行中のサーバでコンテナのログを見てみた. <code>${hdp.version}</code>というのがそのままになっている.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2014-12-30 13:08:49,568 FATAL [AsyncDispatcher event handler] org.apache.hadoop.yarn.event.AsyncDispatcher: Error in dispatcher thread
+</span><span class='line'>java.lang.IllegalArgumentException: Unable to parse '/hdp/apps/${hdp.version}/mapreduce/mapreduce.tar.gz#mr-framework' as a URI, check the setting for mapreduce.application.framework.path
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.util.MRApps.getMRFrameworkName(MRApps.java:178)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.util.MRApps.setMRFrameworkClasspath(MRApps.java:203)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.util.MRApps.setClasspath(MRApps.java:248)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl.getInitialClasspath(TaskAttemptImpl.java:620)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl.createCommonContainerLaunchContext(TaskAttemptImpl.java:755)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl.createContainerLaunchContext(TaskAttemptImpl.java:812)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl$ContainerAssignedTransition.transition(TaskAttemptImpl.java:1527)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl$ContainerAssignedTransition.transition(TaskAttemptImpl.java:1504)
+</span><span class='line'>        at org.apache.hadoop.yarn.state.StateMachineFactory$SingleInternalArc.doTransition(StateMachineFactory.java:362)
+</span><span class='line'>        at org.apache.hadoop.yarn.state.StateMachineFactory.doTransition(StateMachineFactory.java:302)
+</span><span class='line'>        at org.apache.hadoop.yarn.state.StateMachineFactory.access$300(StateMachineFactory.java:46)
+</span><span class='line'>        at org.apache.hadoop.yarn.state.StateMachineFactory$InternalStateMachine.doTransition(StateMachineFactory.java:448)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl.handle(TaskAttemptImpl.java:1069)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl.handle(TaskAttemptImpl.java:145)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.MRAppMaster$TaskAttemptEventDispatcher.handle(MRAppMaster.java:1311)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.MRAppMaster$TaskAttemptEventDispatcher.handle(MRAppMaster.java:1303)
+</span><span class='line'>        at org.apache.hadoop.yarn.event.AsyncDispatcher.dispatch(AsyncDispatcher.java:173)
+</span><span class='line'>        at org.apache.hadoop.yarn.event.AsyncDispatcher$1.run(AsyncDispatcher.java:106)
+</span><span class='line'>        at java.lang.Thread.run(Thread.java:745)
+</span><span class='line'>Caused by: java.net.URISyntaxException: Illegal character in path at index 11: /hdp/apps/${hdp.version}/mapreduce/mapreduce.tar.gz#mr-framework
+</span><span class='line'>        at java.net.URI$Parser.fail(URI.java:2829)
+</span><span class='line'>        at java.net.URI$Parser.checkChars(URI.java:3002)
+</span><span class='line'>        at java.net.URI$Parser.parseHierarchical(URI.java:3086)
+</span><span class='line'>        at java.net.URI$Parser.parse(URI.java:3044)
+</span><span class='line'>        at java.net.URI.&lt;init&gt;(URI.java:595)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.util.MRApps.getMRFrameworkName(MRApps.java:176)
+</span><span class='line'>        ... 18 more
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>mapred-site.xml</code>で、<code>${hdp.version}</code>となっている部分を実際のバージョン番号(<code>2.2.0.0-2041</code>)に変えたら解消した.</p>
+
+<h3>Journalnodeの停止に失敗</h3>
+
+<p>journalnodeを停止すると、<code>no journalnode to stop</code>というエラーが発生. ただ、プロセスは停止している.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># service hadoop-hdfs-journalnode stop
+</span><span class='line'>Stopping Hadoop journalnode:                               [  OK  ]
+</span><span class='line'>no journalnode to stop
+</span><span class='line'>rm: cannot remove `/var/run/hadoop/hadoop-hdfs-journalnode.pid': Permission denied
+</span><span class='line'># ls -l /var/run/hadoop/hadoop-hdfs-journalnode.pid
+</span><span class='line'>-rw-r--r-- 1 hdfs hdfs 6 12月 30 08:24 2014 /var/run/hadoop/hadoop-hdfs-journalnode.pid
+</span><span class='line'># ps -ef | grep -i journal
+</span><span class='line'>root       374     2  0 Dec29 ?        00:00:02 [kjournald]
+</span><span class='line'>root       811     2  0 Dec29 ?        00:00:00 [kjournald]
+</span><span class='line'>root     14406 14342  0 14:15 pts/0    00:00:00 grep -i journal</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ディレクトリのowner/groupが<code>mapred</code>になっている.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># ls -ld /var/run/hadoop
+</span><span class='line'>drwxr-xr-x 5 mapred mapred 4096 12月 30 14:16 2014 /var/run/hadoop</span></code></pre></td></tr></table></div></figure>
+
+
+<p>これを<code>hdfs.hdfs</code>にしたら事象は解消したが、HistoryServerをrestartしたら<code>/var/run/hadoop</code>のownerが<code>mapred.mapred</code>に戻ってしまった.</p>
+
+<p><code>hadoop-mapreduce-historyserver</code>のinitスクリプトにある、以下の部分のせい. つまり、historyserverとHDFS系のdaemonが同居している場合に発生する問題.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>install -d -m 0755 -o mapred -g mapred $HADOOP_PID_DIR 1&gt;/dev/null 2&gt;&1 || :
+</span><span class='line'>[ -d "$LOCKDIR" ] || install -d -m 0755 $LOCKDIR 1&gt;/dev/null 2&gt;&1 || :
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>hadoop-env.sh</code>に以下の記述を入れ、HistoryServerの<code>HADOOP_PID_DIR</code>をHDFS系と分けることで対応することにした.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># For HistoryServer
+</span><span class='line'>if [ "${SVC_USER}" = "mapred" ]; then
+</span><span class='line'>  HADOOP_PID_DIR=/var/run/hadoop-mapreduce
+</span><span class='line'>fi
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>Hive CREATE TABLE時のNo privilege</h3>
+
+<p>beelineからhiveユーザで接続し、create tableを発行した際のエラー</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0: jdbc:hive2://hdp16.hadoop.local:10000&gt; create table test2(a int, b string); 
+</span><span class='line'>Error: Error while compiling statement: FAILED: SemanticException MetaException(message:No privilege 'Select' found for inputs { database:default}) (state=42000,code=40000)</span></code></pre></td></tr></table></div></figure>
+
+
+<p><a href="https://cwiki.apache.org/confluence/display/Hive/Storage+Based+Authorization+in+the+Metastore+Server">Storage Based Authorization in the Metastore Server</a>に引っかかっている模様</p>
+
+<p>一旦以下の設定を外して対応</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  &lt;property&gt;
+</span><span class='line'>    &lt;name&gt;hive.metastore.pre.event.listeners&lt;/name&gt;
+</span><span class='line'>    &lt;value&gt;org.apache.hadoop.hive.ql.security.authorization.AuthorizationPreEventListener&lt;/value&gt;
+</span><span class='line'>    &lt;description&gt;List of comma separated listeners for metastore events.&lt;/description&gt;
+</span><span class='line'>  &lt;/property&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>Hive on MRでのクエリ実行エラー</h3>
+
+<p>HiveServer2のログには以下のメッセージが出ている.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2015-01-06 03:14:42,300 ERROR [HiveServer2-Background-Pool: Thread-65]: exec.Task (SessionState.java:printError(833)) - Ended Job = job_1420474977406_0003 with
+</span><span class='line'>exception 'java.lang.NumberFormatException(For input string: "100000L")'
+</span><span class='line'>java.lang.NumberFormatException: For input string: "100000L"
+</span><span class='line'>        at java.lang.NumberFormatException.forInputString(NumberFormatException.java:65)
+</span><span class='line'>        at java.lang.Long.parseLong(Long.java:441)
+</span><span class='line'>        at java.lang.Long.parseLong(Long.java:483)
+</span><span class='line'>        at org.apache.hadoop.conf.Configuration.getLong(Configuration.java:1189)
+</span><span class='line'>        at org.apache.hadoop.hive.conf.HiveConf.getLongVar(HiveConf.java:2253)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.mr.HadoopJobExecHelper.checkFatalErrors(HadoopJobExecHelper.java:209)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.mr.HadoopJobExecHelper.progress(HadoopJobExecHelper.java:308)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.mr.HadoopJobExecHelper.progress(HadoopJobExecHelper.java:547)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.mr.ExecDriver.execute(ExecDriver.java:435)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.mr.MapRedTask.execute(MapRedTask.java:137)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.Task.executeTask(Task.java:160)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.TaskRunner.runSequential(TaskRunner.java:85)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.Driver.launchTask(Driver.java:1604)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.Driver.execute(Driver.java:1364)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.Driver.runInternal(Driver.java:1177)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.Driver.run(Driver.java:1004)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.Driver.run(Driver.java:999)
+</span><span class='line'>        at org.apache.hive.service.cli.operation.SQLOperation.runQuery(SQLOperation.java:144)
+</span><span class='line'>        at org.apache.hive.service.cli.operation.SQLOperation.access$100(SQLOperation.java:69)
+</span><span class='line'>        at org.apache.hive.service.cli.operation.SQLOperation$1$1.run(SQLOperation.java:196)
+</span><span class='line'>        at java.security.AccessController.doPrivileged(Native Method)
+</span><span class='line'>        at javax.security.auth.Subject.doAs(Subject.java:415)
+</span><span class='line'>        at org.apache.hadoop.security.UserGroupInformation.doAs(UserGroupInformation.java:1628)
+</span><span class='line'>        at org.apache.hadoop.hive.shims.HadoopShimsSecure.doAs(HadoopShimsSecure.java:536)
+</span><span class='line'>        at org.apache.hive.service.cli.operation.SQLOperation$1.run(SQLOperation.java:208)
+</span><span class='line'>        at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:471)
+</span><span class='line'>        at java.util.concurrent.FutureTask.run(FutureTask.java:262)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+</span><span class='line'>        at java.lang.Thread.run(Thread.java:745)
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><a href="https://issues.apache.org/jira/browse/AMBARI-8219">AMBARI-8219</a>
+の事例に従い、hive-site.xmlの以下を変更したらOK</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>   &lt;property&gt;
+</span><span class='line'>     &lt;name&gt;hive.exec.max.created.files&lt;/name&gt;
+</span><span class='line'>-    &lt;value&gt;100000L&lt;/value&gt;
+</span><span class='line'>+    &lt;value&gt;100000&lt;/value&gt;
+</span><span class='line'>     &lt;description&gt;Maximum number of HDFS files created by all mappers/reducers in a MapReduce job.&lt;/description&gt;
+</span><span class='line'>   &lt;/property&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>hive.execution.engine=tez でのHiveクエリ実行エラー1</h3>
+
+<p>HiveServer2のログは以下の通り</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>5841 end=1419741946024 duration=183 from=org.apache.hadoop.hive.ql.Driver&gt;
+</span><span class='line'>2014-12-28 13:45:46,025 ERROR [HiveServer2-Handler-Pool: Thread-56]: thrift.ProcessFunction (ProcessFunction.java:process(41)) - Internal error processing ExecuteStatement
+</span><span class='line'>java.lang.NoClassDefFoundError: org/apache/tez/dag/api/SessionNotRunning
+</span><span class='line'>        at java.lang.Class.getDeclaredConstructors0(Native Method)
+</span><span class='line'>        at java.lang.Class.privateGetDeclaredConstructors(Class.java:2585)
+</span><span class='line'>        at java.lang.Class.getConstructor0(Class.java:2885)
+</span><span class='line'>        at java.lang.Class.newInstance(Class.java:350)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.TaskFactory.get(TaskFactory.java:133)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>このクラスはtez-apiのjarに含まれているが、HiveServer2のサーバにTezクライアントをセットアップしていなかったのが原因だった. セットアップして解消.</p>
+
+<h3>Tez OrderedWordCountの実行エラー</h3>
+
+<p>Tezの動作確認として、tez-examplesに含まれる、OrderedWordCountを実行した際のエラー.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># su - hdfs
+</span><span class='line'>-bash-4.1$ cat /tmp/test.txt 
+</span><span class='line'>foo bar foo bar foo
+</span><span class='line'>$ hadoop fs -put /tmp/test.txt /tmp/test.txt 
+</span><span class='line'>-bash-4.1$ hadoop jar /usr/hdp/2.2.0.0-2041/tez/tez-examples-0.5.2.2.2.0.0-2041.jar orderedwordcount /tmp/test.txt /tmp/out
+</span><span class='line'>Running OrderedWordCount
+</span><span class='line'>14/12/27 02:54:57 INFO client.TezClient: Tez Client Version: [ component=tez-api, version=0.5.2.2.2.0.0-2041, revision=db32ad437885baf17ab90885b4ddb226fbbe3559, SCM-URL=scm:git:https://git-wip-us.apache.org/repos/asf/tez.git, buildTIme=20141119-1512 ]
+</span><span class='line'>14/12/27 02:54:59 INFO client.TezClient: Submitting DAG application with id: application_1419606523103_0010
+</span><span class='line'>14/12/27 02:54:59 INFO Configuration.deprecation: fs.default.name is deprecated. Instead, use fs.defaultFS
+</span><span class='line'>14/12/27 02:54:59 INFO client.TezClientUtils: Using tez.lib.uris value from configuration: hdfs://hdpexperiment/apps/tez/,hdfs://hdpexperiment/apps/tez/lib/,hdfs://hdpexperiment/hdp/apps/current/tez/tez.tar.gz
+</span><span class='line'>14/12/27 02:54:59 WARN client.TezClientUtils: Duplicate resource found, resourceName=tez.tar.gz, existingPath=scheme: "hdfs" host: "hdpexperiment" port: -1 file: "/apps/tez/lib/tez.tar.gz", newPath=hdfs://hdpexperiment/hdp/apps/current/tez/tez.tar.gz
+</span><span class='line'>14/12/27 02:54:59 INFO client.TezClient: Tez system stage directory hdfs://hdpexperiment/tmp/hdfs/staging/.tez/application_1419606523103_0010 doesn't exist and is created
+</span><span class='line'>14/12/27 02:55:00 INFO client.TezClient: Submitting DAG to YARN, applicationId=application_1419606523103_0010, dagName=OrderedWordCount
+</span><span class='line'>14/12/27 02:55:01 INFO impl.YarnClientImpl: Submitted application application_1419606523103_0010
+</span><span class='line'>14/12/27 02:55:01 INFO client.TezClient: The url to track the Tez AM: http://hdp16.hadoop.local:8088/proxy/application_1419606523103_0010/
+</span><span class='line'>14/12/27 02:55:01 INFO client.DAGClientImpl: Waiting for DAG to start running
+</span><span class='line'>14/12/27 02:55:13 INFO client.DAGClientImpl: DAG completed. FinalState=FAILED
+</span><span class='line'>OrderedWordCount failed with diagnostics: [Application application_1419606523103_0010 failed 2 times due to AM Container for appattempt_1419606523103_0010_000002 exited with  exitCode: 1
+</span><span class='line'>For more detailed output, check application tracking page:http://hdp16.hadoop.local:8088/proxy/application_1419606523103_0010/Then, click on links to logs of each attempt.
+</span><span class='line'>Diagnostics: Exception from container-launch.
+</span><span class='line'>Container id: container_1419606523103_0010_02_000001
+</span><span class='line'>Exit code: 1
+</span><span class='line'>Stack trace: ExitCodeException exitCode=1:
+</span><span class='line'>        at org.apache.hadoop.util.Shell.runCommand(Shell.java:538)
+</span><span class='line'>        at org.apache.hadoop.util.Shell.run(Shell.java:455)
+</span><span class='line'>        at org.apache.hadoop.util.Shell$ShellCommandExecutor.execute(Shell.java:715)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.nodemanager.DefaultContainerExecutor.launchContainer(DefaultContainerExecutor.java:211)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainerLaunch.call(ContainerLaunch.java:302)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainerLaunch.call(ContainerLaunch.java:82)
+</span><span class='line'>        at java.util.concurrent.FutureTask.run(FutureTask.java:262)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+</span><span class='line'>        at java.lang.Thread.run(Thread.java:745)
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>Container exited with a non-zero exit code 1
+</span><span class='line'>Failing this attempt. Failing the application.]
+</span><span class='line'>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>コンテナのログを見ると以下の通り. クラスが見つからない.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Container: container_1419606523103_0009_01_000001 on hdp17.hadoop.local_45454
+</span><span class='line'>===============================================================================
+</span><span class='line'>LogType:stderr
+</span><span class='line'>Log Upload Time:27-12-2014 03:37:52
+</span><span class='line'>LogLength:1445
+</span><span class='line'>Log Contents:
+</span><span class='line'>Exception in thread "main" java.lang.NoClassDefFoundError: org/apache/hadoop/service/AbstractService
+</span><span class='line'>        at java.lang.ClassLoader.defineClass1(Native Method)
+</span><span class='line'>        at java.lang.ClassLoader.defineClass(ClassLoader.java:800)
+</span><span class='line'>        at java.security.SecureClassLoader.defineClass(SecureClassLoader.java:142)
+</span><span class='line'>        at java.net.URLClassLoader.defineClass(URLClassLoader.java:449)
+</span><span class='line'>        at java.net.URLClassLoader.access$100(URLClassLoader.java:71)
+</span><span class='line'>        at java.net.URLClassLoader$1.run(URLClassLoader.java:361)
+</span><span class='line'>        at java.net.URLClassLoader$1.run(URLClassLoader.java:355)
+</span><span class='line'>        at java.security.AccessController.doPrivileged(Native Method)
+</span><span class='line'>        at java.net.URLClassLoader.findClass(URLClassLoader.java:354)
+</span><span class='line'>        at java.lang.ClassLoader.loadClass(ClassLoader.java:425)
+</span><span class='line'>        at sun.misc.Launcher$AppClassLoader.loadClass(Launcher.java:308)
+</span><span class='line'>        at java.lang.ClassLoader.loadClass(ClassLoader.java:358)
+</span><span class='line'>        at sun.launcher.LauncherHelper.checkAndLoadMain(LauncherHelper.java:482)
+</span><span class='line'>Caused by: java.lang.ClassNotFoundException: org.apache.hadoop.service.AbstractService
+</span><span class='line'>        at java.net.URLClassLoader$1.run(URLClassLoader.java:366)
+</span><span class='line'>        at java.net.URLClassLoader$1.run(URLClassLoader.java:355)
+</span><span class='line'>        at java.security.AccessController.doPrivileged(Native Method)
+</span><span class='line'>        at java.net.URLClassLoader.findClass(URLClassLoader.java:354)
+</span><span class='line'>        at java.lang.ClassLoader.loadClass(ClassLoader.java:425)
+</span><span class='line'>        at sun.misc.Launcher$AppClassLoader.loadClass(Launcher.java:308)
+</span><span class='line'>        at java.lang.ClassLoader.loadClass(ClassLoader.java:358)
+</span><span class='line'>        ... 13 more
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>このクラスは、hadoop-common.jarに入っており、<code>yarn classpath</code>で確認するとこのjarもCLASSPATHに含まれているのだが、、、</p>
+
+<p>(1/9追記)どうやら、<code>tez.lib.uris</code>の問題だった模様.以下のように、HDFSに乗せた<code>tez.tar.gz</code>のパスを指定したらうまく動作した.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;property&gt;
+</span><span class='line'>  &lt;name&gt;tez.lib.uris&lt;/name&gt;
+</span><span class='line'>  &lt;value&gt;/hdp/apps/current/tez/tez.tar.gz&lt;/value&gt;
+</span><span class='line'>&lt;/property&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>まとめ</h2>
+
+<p>ということで、HDP2.2のクラスタを作ろうとして色々うまくいかなかったのでまとめてみた. <del>あとはTezのエラーを解消したいなぁ.</del> あと、マニュアルをブラウザで見るととても見づらいので、PDFをダウンロードして手元で見た方が良い.</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -1267,6 +1968,10 @@
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2016/04/08/flink-state-management/">Apache Flinkのstate管理について</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2016/04/05/apache-flink-continuousprocessingtimetrigger/">Apache Flink ContinuousProcessingTimeTriggerの話</a>
       </li>
     
@@ -1282,15 +1987,11 @@
         <a href="/blog/2016/02/26/trying-apache-flink/">Apache Flinkを試している</a>
       </li>
     
-      <li class="post">
-        <a href="/blog/2016/02/08/hadoop-slash-spark-conference-2016/">Hadoop / Spark Conference Japan 2016 に行ってきた</a>
-      </li>
-    
   </ul>
 </section>
 <section>
   <h1>Categories</h1>
-    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/esper'>Esper (1)</a></li><li><a href='/blog/categories/flink'>Flink (3)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (3)</a></li><li><a href='/blog/categories/norikra'>Norikra (1)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li><li><a href='/blog/categories/spark'>Spark (1)</a></li><li><a href='/blog/categories/mian-qiang-hui'>勉強会 (1)</a></li></ul>
+    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/esper'>Esper (1)</a></li><li><a href='/blog/categories/flink'>Flink (4)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (3)</a></li><li><a href='/blog/categories/norikra'>Norikra (1)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li><li><a href='/blog/categories/spark'>Spark (1)</a></li><li><a href='/blog/categories/mian-qiang-hui'>勉強会 (1)</a></li></ul>
 </section>
 
   
