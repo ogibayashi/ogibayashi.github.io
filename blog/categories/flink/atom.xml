@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Flink | Tech Notes]]></title>
   <link href="http://ogibayashi.github.io/blog/categories/flink/atom.xml" rel="self"/>
   <link href="http://ogibayashi.github.io/"/>
-  <updated>2016-03-25T21:56:24+09:00</updated>
+  <updated>2016-05-27T20:55:01+09:00</updated>
   <id>http://ogibayashi.github.io/</id>
   <author>
     <name><![CDATA[OGIBAYASHI Hironori]]></name>
@@ -12,6 +12,106 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Apache Flinkを試してみての感想]]></title>
+    <link href="http://ogibayashi.github.io/blog/2016/05/13/thoughts-on-apache-flink/"/>
+    <updated>2016-05-13T19:42:13+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2016/05/13/thoughts-on-apache-flink</id>
+    <content type="html"><![CDATA[<p>しばらくApache Flinkを試してみたので、感想を書いておこうと思う.</p>
+
+<h2>試したこと</h2>
+
+<ul>
+<li>standalone modeでのクラスタ構築</li>
+<li>ストリーミングジョブを書いてみる
+
+<ul>
+<li>TumblingTimeWindowやSlidingTimeWindowでの集計</li>
+<li>Kafka SourceとElasticsearch Sinkの利用</li>
+<li>必要だったので、カスタムトリガは書いた</li>
+</ul>
+</li>
+<li>幾つかのジョブで性能測定</li>
+<li>社内の本番fluentdからKafka経由でFlinkにストリームを投入し、ジョブを十数日くらい連続稼働してみる</li>
+<li>state backendをHDFSやRocksDBにしてみる</li>
+<li>JobManager HA</li>
+<li>TaskManagerやJobManagerを落としてみる</li>
+<li>Flink on YARN (ジョブを起動してみただけ)</li>
+</ul>
+
+
+<h2>試してないこと</h2>
+
+<ul>
+<li>DataSet APIの利用</li>
+<li>savepoint, savepointからの復旧</li>
+<li>event timeやingenstion timeの利用(processing timeしか使ってない)</li>
+<li>複数ジョブの相乗り</li>
+<li>高トラフィックかつ複数ジョブでの連続稼働</li>
+<li>Flink on YARNをもうちょっと色々使ってみる</li>
+<li>(多分他にも色々)</li>
+</ul>
+
+
+<h2>所感</h2>
+
+<p>全体としてはすごく良く出来ていると思う. プロセスが落ちたりしても勝手に復旧するし、性能も出るし、WebUIやREST APIで色々情報取れるので運用もしやすそう. 今後は本番に入れていこうと思っている.</p>
+
+<ul>
+<li>ちゃんと動く？
+
+<ul>
+<li>期待通りに動かなくて、MLで聞いたらBugだ、って言われて直してくれたのが2件</li>
+<li>ContinuousProcessingTimeTriggerは期待通りの動作をしなかったので、修正版を書く必要があった</li>
+<li>後は、上記の範囲では特に問題なく動いている</li>
+</ul>
+</li>
+<li>処理の書きやすさ
+
+<ul>
+<li>APIがハイレベルなので、割と少ないコードで処理を書くことができて良い</li>
+<li>状態の保存とか、windowとか、自分で書くのは大変なのでその辺の面倒はFlinkが見てくれる</li>
+</ul>
+</li>
+<li>性能
+
+<ul>
+<li>もちろん処理によるが、単純なものであれば1CPUで10万records/sec以上は普通に処理できそう</li>
+</ul>
+</li>
+<li>耐障害性
+
+<ul>
+<li>ジョブ実行中にJobManagerやTaskManagerを落としてみたが、勝手に復旧された. すごい.</li>
+<li>HDFS障害でどう振る舞うか？はまだ試せてないけど気になるところ</li>
+</ul>
+</li>
+<li>運用
+
+<ul>
+<li>WebUIやREST APIで色々取れる. WebUIで大抵のものは見える印象.</li>
+<li>スロット数とかはもちろん、ジョブ内のオペレータ単位で処理レコード数とか取れる</li>
+<li>チェックポイントの所要時間やサイズも取れる</li>
+</ul>
+</li>
+<li>不安なところ
+
+<ul>
+<li>チェックポイントのサイズには注意がいりそう. FsStateBackendの場合、状態は全て各TaskManagerのメモリに持ち、チェックポイントでHDFSに書き出される. 差分スナップショット的なものはないので、状態が大きくなってくるとスナップショットに時間がかかり、性能劣化する. キー(keyByで指定する奴)の数が大きいケースでは、RocksDBを使うことで改善されるらしいが、まだそれが有効なケースに出会ってない.</li>
+<li>FlinkジョブをYARNで動かす場合を除いて、各TaskManagerは1プロセスで、その中で複数ジョブがスレッドとして動く形になっているのでisolationの部分は不安. あるジョブに引きづられてTaskManagerが固まるとかありそう.</li>
+<li>ストリーム処理のプロダクトはいくつかあるし、Facebook, Twitter, Likedinみたいな大御所がバックにいるわけではないので、生き残っていくのだろうか</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>まとめ</h2>
+
+<p>ということで、自分がしばらく試しての所感を書いてみた.
+実績の少ないプロダクトという意味での不安感はあるけど、性能、拡張性、耐障害性、APIの使いやすさは素晴らしいと思うので、使っていきたい. これ以上は使ってみないとわからないと思うし. あと、Flink on YARNの場合はYARNが動くクラスタがあれば、別途サーバを用意しなくてもFlinkジョブを動かすことができるので、既にHadoop環境がある場合なんかは、とりあえず試してみると良いんじゃないかと思う.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Apache Flinkを試している]]></title>
