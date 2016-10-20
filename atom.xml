@@ -4,7 +4,7 @@
   <title><![CDATA[Tech Notes]]></title>
   <link href="http://ogibayashi.github.io/atom.xml" rel="self"/>
   <link href="http://ogibayashi.github.io/"/>
-  <updated>2016-05-27T20:55:36+09:00</updated>
+  <updated>2016-10-21T06:48:32+09:00</updated>
   <id>http://ogibayashi.github.io/</id>
   <author>
     <name><![CDATA[OGIBAYASHI Hironori]]></name>
@@ -12,6 +12,142 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Realtime Data Processing at Facebookを読んで]]></title>
+    <link href="http://ogibayashi.github.io/blog/2016/07/12/realtime-data-processing-at-facebook/"/>
+    <updated>2016-07-12T23:16:10+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2016/07/12/realtime-data-processing-at-facebook</id>
+    <content type="html"><![CDATA[<p>てすと</p>
+
+<p><a href="https://research.facebook.com/publications/realtime-data-processing-at-facebook/">https://research.facebook.com/publications/realtime-data-processing-at-facebook/</a> を読んだのでなんとなくまとめつつ思ったことなどを書いてみる.
+原文のまとめというよりは、主観と自分の理解の記述を多めにしているので、興味を持った人は是非原文を読むことをお勧めします.</p>
+
+<h2>この文章は何か</h2>
+
+<p>Facebookでストリーム処理を運用してきた経験を元に、ストリーム処理として重要な要件、設計上のポイント、Facebookで実際にどうしているか、と言ったことが書いてある. 個人的には、ストリーム処理というものを、製品の比較とかではなくてその機能/非機能面から紐解いてる感じで参考になった.</p>
+
+<h2>ストリーム処理で考慮すべき要件</h2>
+
+<p>ストリーム処理の要件を定義する上では以下が重要</p>
+
+<ul>
+<li>Ease of use
+
+<ul>
+<li>どれくらい複雑なことをやりたいか. SQLレベルか、プログラムが必要なレベルか.</li>
+</ul>
+</li>
+<li>Performance
+
+<ul>
+<li>要求されるレイテンシとスループット</li>
+</ul>
+</li>
+<li>Fault-tolerance
+
+<ul>
+<li>対障害性はどの程度必要か？障害時のデータ重複や欠損は許容されるか</li>
+</ul>
+</li>
+<li>Scalability
+
+<ul>
+<li>データ流量の変化にどれだけ柔軟に対応できるか</li>
+</ul>
+</li>
+<li>Correctness
+
+<ul>
+<li>ACIDが必要？ 入力されたデータは全て確実に出力に反映されている必要があるか</li>
+</ul>
+</li>
+</ul>
+
+
+<p>例えば、カジュアルなストリーム処理の例としてfluentd+Norikraを考えてみる. これはとても簡単に使えるし、10,000msg/sec程度なら大体問題なく処理できるけど、それ以上にスケールしたいとか、障害時含めてデータの欠損・重複は許さんとか言われると、それは違うソリューションを持ってこないと無理だよね、となる. なので、この辺の観点から要件を明確にするのは重要、と思う.</p>
+
+<h2>Facebookのシステム</h2>
+
+<p>大きく分けると、メッセージバス、ストリーム処理、データストアの3機能になる.</p>
+
+<ul>
+<li>メッセージバス
+
+<ul>
+<li>scribe. scribeってfluentd的な感じでログを転送・集約してるのかと思ったら、やってることはKafkaらしい. クライアントは自由にcategory(Kafkaで言うtopic)をsubscribeできるし、データは永続化されていてリプレイもできる</li>
+</ul>
+</li>
+<li>ストリーム処理
+
+<ul>
+<li>Puma, Stylus, Swiftと3つある.</li>
+<li>PumaはSQLで簡単に使える、Swiftはscribeのストリームのここまで読んだよ、というチェックポイント機能を提供する、Stylusは高機能で色々できるけど、C++でコードを書くので処理の記述はちょっと大変、と理解した. Swiftがちょっとよくわからない.</li>
+</ul>
+</li>
+<li>データストア
+
+<ul>
+<li>Laser, Scuba, Hiveの3つ</li>
+<li>Laserはストリーム処理からも使える高スループットKVS. RocksDBベース.</li>
+<li>Scubaはアドホッククエリ用のCube.</li>
+<li>Hiveはとにかく全てのデータが入っているDWH. クエリにはPrestoが使える</li>
+</ul>
+</li>
+</ul>
+
+
+<p>lessons learnedの章にもあるけど、ストリーム処理に複数のプロダクトがあるというのは結構重要で、Pumaでカジュアルに始めつつ、効果が出そうでもっと色々やりたくなったらStylusを使う、というようなことができる.
+ストリーム処理とデータストアの関連で言うと、Laserは高スループットをさばけるのでストリーム処理中で使ったり、ストリーム処理の出力を入れたりする、Scubaはストリーム処理で加工した結果を入れる、という感じらしい.</p>
+
+<h2>Design Desicions</h2>
+
+<p>ここが、この文章で最も重要なところ. ストリーム処理を設計する上でのポイント、そしてFacebookではどのような選択をしたか、が書かれている. どれも正解があるわけではなく、複数の選択肢から要件に合わせて選ぶ、という性質のもの.</p>
+
+<ul>
+<li>Language paradigm
+
+<ul>
+<li>ストリーム処理を書くための言語を何にするか. SQLは簡単だが表現力に劣る、一方で手続き型でがっつりコードを書けるようにすると自由度は高いが開発コストがかかる.</li>
+<li>Facebookでは、要件に合わせてストリーム処理エンジンを選べるようになっている.</li>
+</ul>
+</li>
+<li>Data transfer
+
+<ul>
+<li>ストリーム処理は大抵複数のオペレータから構成されるが、その間のデータ転送をどうするか.</li>
+<li>直接RPCで繋ぐのは性能的に有利だが、信頼性や柔軟性には課題がある. 間にストレージを挟むのはその反対で、信頼性は高く、また送信側・受信側に処理性能の違いがあるケースに間のストレージで吸収できるというメリットがある.</li>
+<li>Facebookでは間にscribeを挟む形にしている</li>
+</ul>
+</li>
+<li>Processing semantics
+
+<ul>
+<li>障害が発生した際のログ欠損、重複に対してどういうポリシーで行くか. at-least-once, at-most-once, exactly-onceのどれかとなる.</li>
+<li>statefulな処理の場合は、stateに対するsemanticsと、outputに対するsemanticsがある. statelessの場合は後者しかない</li>
+<li>stateで考えると、どのsemanticsにするかは、状態の保存と読み込んでいるログのオフセット保存をどの順番で行うか、もしくはatomicに行うか、で決まる. 例えば、状態保存→オフセット保存、の場合はログの重複が発生しうるのでat-least-onceになる</li>
+</ul>
+</li>
+<li>State saving mechanisms
+
+<ul>
+<li>処理の内部状態をどう保持するか. 耐障害性を考慮すると、障害時に復旧できる形で状態を保持する必要がある. 内部状態を常に他ノードにレプリケートしておくとか、外部のDBに保存するとか、いくつか方法が考えられる</li>
+<li>Facebookで良く使われているのは、各サーバ内のDBに保存しつつ、定期的に外部データストアにもバックアップを取る、という方式. local DBに持っておけばプロセス障害などには対応できるし、最悪サーバが返ってこないケースには外部データストアのバックアップを使うことができる.</li>
+<li>複数の処理ノード間での状態の整合性、というのに対しては言及がないが、Data transferのところであった通り、Facebookでは多段になっている処理の場合、間にはscribeが入っていて、各処理はscribeのオフセットを管理しているので不整合は発生しない、ということなんだろうか.</li>
+</ul>
+</li>
+<li>Backfill Processing
+
+<ul>
+<li>過去データに対して処理を行いたい時にどうするか.</li>
+<li>ストリーム処理だけでやろうとすると、過去データを全てストリームとして流せないといけないことになる. かと行って、同じ処理をバッチ用とストリーム用で二重開発するのはコストが高い.</li>
+<li>Facebookは、PumaのプログラムをHive上のUDFとして再利用できるようになっている</li>
+</ul>
+</li>
+</ul>
+
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[Apache Flinkを試してみての感想]]></title>
@@ -110,6 +246,606 @@
 
 <p>ということで、自分がしばらく試しての所感を書いてみた.
 実績の少ないプロダクトという意味での不安感はあるけど、性能、拡張性、耐障害性、APIの使いやすさは素晴らしいと思うので、使っていきたい. これ以上は使ってみないとわからないと思うし. あと、Flink on YARNの場合はYARNが動くクラスタがあれば、別途サーバを用意しなくてもFlinkジョブを動かすことができるので、既にHadoop環境がある場合なんかは、とりあえず試してみると良いんじゃないかと思う.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Apache Flinkのstate管理について]]></title>
+    <link href="http://ogibayashi.github.io/blog/2016/04/08/flink-state-management/"/>
+    <updated>2016-04-08T12:09:26+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2016/04/08/flink-state-management</id>
+    <content type="html"><![CDATA[<h2>はじめに</h2>
+
+<p>ストリーム処理の中で、処理をstatefulにしたい、という要求はよくある。例えば、1時間のtime windowで件数を集計している場合、ストリームが流れるにつれて内部で保持しているカウンタは増加していく.
+そして、障害等で再起動をした時とかには、そのカウンタの値も一緒に復旧したい.</p>
+
+<h2>Flinkにおけるstateの保存</h2>
+
+<p>これに対して、Apache Flinkは定期的に処理状態のスナップショットを取得する、という方法で対応している.
+そして、分散環境でまともに全てのスナップショットを取るのは辛いので、分散してスナップショットを取るようにしている. 具体的には<a href="https://ci.apache.org/projects/flink/flink-docs-master/internals/stream_checkpointing.html">ここ</a> に詳しいが、ストリームのソースから定期的にBarrierと呼ばれる印を流して、各オペレータはこれを受け取るとスナップショットを保存するようになっている. こうすることで、処理全体を止めずに一貫性のあるスナップショットを取れるよね、という話. 障害時にはスナップショットから状態を復旧し、スナップショット以降のログをリプレイすることで処理を継続する.</p>
+
+<p>スナップショットの保存先は、以下から選択することができる. グローバルのデフォルトを設定することも、ジョブ単位でそれを上書きすることも可能.  (詳しくは<a href="https://ci.apache.org/projects/flink/flink-docs-master/apis/streaming/state_backends.html">ここ</a>)</p>
+
+<ul>
+<li>MemoryStateBacked
+
+<ul>
+<li>デフォルト. チェックポイントの際にJobManagerのメモリ上に状態を保持する. デフォルトはサイズが5MBまで.</li>
+</ul>
+</li>
+<li>FsStateBackend
+
+<ul>
+<li>ファイルシステムに保持する. 最新の状態はTaskManagerのメモリに保持し、チェックポイントの際にファイルシステムに保存する. ファイルシステムはローカルでもHDFSでも良いが、障害時に別ノードで復旧することを考えるとHDFSになるだろう.</li>
+</ul>
+</li>
+<li>RocksDBStateBackend
+
+<ul>
+<li>最新の状態はTaskManagerローカルファイルシステム上のRocksDBに保持し、チェックポイントの際にそれをFsStateBackendと同じようにファイルシステムに保存する. スループットは若干落ちるが、大量のstateを保持することができる.</li>
+</ul>
+</li>
+</ul>
+
+
+<h2>実験</h2>
+
+<p>とは言え、処理によってはstateが大きくなるケースもあるわけで、そういう時にどうなるんだろう？と思って実験してみた.
+環境はFlink 1.0.0でKafka, Flink, HDFSは物理サーバ.</p>
+
+<p>こんな感じで、foobarというフィールドに100バイトのランダム文字列を入れて、それのdistinct countを取る. 重複を判断するためには、過去の値をすべて持たないといけないので状態は大きくなる.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ head -n 1 dummy_log.aa 
+</span><span class='line'>id:0000 time:[2016-04-05 12:40:57]      level:DEBUG     method:POST     uri:/api/v1/people1     reqtime:3.053540515830725       foobar:dNjtvYKxgyym6bMNxUyrLznijuZqZfpVasJyXZDttoNGbj5GFk</span></code></pre></td></tr></table></div></figure>
+
+
+<p>こんな感じのコードで、処理を記述した(MyContinuousProcessingTimeTriggerはデフォルトのContinuousProcessingTimeTriggerに若干の改修を入れたもの).
+保存先はHDFSとしている. timeWindowAllなので、処理は分散されず単一のスレッドで処理される.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class='scala'><span class='line'><span class="k">val</span> <span class="n">stream</span> <span class="k">=</span> <span class="n">env</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">addSource</span><span class="o">(</span><span class="k">new</span> <span class="nc">FlinkKafkaConsumer09</span><span class="o">[</span><span class="kt">String</span><span class="o">](</span><span class="s">&quot;kafka.json2&quot;</span><span class="o">,</span> <span class="k">new</span> <span class="nc">SimpleStringSchema</span><span class="o">(),</span> <span class="n">properties</span><span class="o">))</span>
+</span><span class='line'>
+</span><span class='line'><span class="o">.</span><span class="n">map</span><span class="o">(</span><span class="n">parseJson</span><span class="o">(</span><span class="k">_</span><span class="o">))</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">timeWindowAll</span><span class="o">(</span><span class="nc">Time</span><span class="o">.</span><span class="n">of</span><span class="o">(</span><span class="mi">10</span><span class="o">,</span> <span class="nc">TimeUnit</span><span class="o">.</span><span class="nc">DAYS</span><span class="o">))</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">trigger</span><span class="o">(</span><span class="nc">MyContinuousProcessingTimeTrigger</span><span class="o">.</span><span class="n">of</span><span class="o">(</span><span class="nc">Time</span><span class="o">.</span><span class="n">seconds</span><span class="o">(</span><span class="mi">5</span><span class="o">)))</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">fold</span><span class="o">(</span><span class="nc">Set</span><span class="o">[</span><span class="kt">String</span><span class="o">]()){(</span><span class="n">r</span><span class="o">,</span><span class="n">i</span><span class="o">)</span> <span class="k">=&gt;</span> <span class="o">{</span> <span class="n">r</span> <span class="o">+</span> <span class="n">i</span><span class="o">}}</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">map</span><span class="o">{</span><span class="n">x</span> <span class="k">=&gt;</span> <span class="o">(</span><span class="nc">System</span><span class="o">.</span><span class="n">currentTimeMillis</span><span class="o">(),</span> <span class="n">x</span><span class="o">.</span><span class="n">size</span><span class="o">)}</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">addSink</span><span class="o">(</span><span class="k">new</span> <span class="nc">ElasticsearchSink</span><span class="o">(</span><span class="n">config</span><span class="o">,</span> <span class="n">transports</span><span class="o">,</span> <span class="k">new</span> <span class="nc">IndexRequestBuilder</span><span class="o">[</span><span class="kt">Tuple2</span><span class="o">[</span><span class="kt">Long</span>, <span class="kt">Int</span><span class="o">]]</span>  <span class="o">{</span>
+</span><span class='line'>    <span class="k">override</span> <span class="k">def</span> <span class="n">createIndexRequest</span><span class="o">(</span><span class="n">element</span><span class="k">:</span> <span class="kt">Tuple2</span><span class="o">[</span><span class="kt">Long</span>, <span class="kt">Int</span><span class="o">],</span> <span class="n">ctx</span><span class="k">:</span> <span class="kt">RuntimeContext</span><span class="o">)</span><span class="k">:</span> <span class="kt">IndexRequest</span> <span class="o">=</span> <span class="o">{</span>
+</span><span class='line'>      <span class="k">val</span> <span class="n">json</span> <span class="k">=</span> <span class="k">new</span> <span class="nc">HashMap</span><span class="o">[</span><span class="kt">String</span>, <span class="kt">AnyRef</span><span class="o">]</span>
+</span><span class='line'>      <span class="n">json</span><span class="o">.</span><span class="n">put</span><span class="o">(</span><span class="s">&quot;@timestamp&quot;</span><span class="o">,</span> <span class="k">new</span> <span class="nc">Timestamp</span><span class="o">(</span><span class="n">element</span><span class="o">.</span><span class="n">_1</span><span class="o">))</span>
+</span><span class='line'>      <span class="n">json</span><span class="o">.</span><span class="n">put</span><span class="o">(</span><span class="s">&quot;count&quot;</span><span class="o">,</span> <span class="n">element</span><span class="o">.</span><span class="n">_2</span><span class="k">:</span> <span class="kt">java.lang.Integer</span><span class="o">)</span>
+</span><span class='line'>      <span class="nc">Requests</span><span class="o">.</span><span class="n">indexRequest</span><span class="o">.</span><span class="n">index</span><span class="o">(</span><span class="s">&quot;dummy3&quot;</span><span class="o">).</span><span class="n">`type`</span><span class="o">(</span><span class="s">&quot;my-type&quot;</span><span class="o">).</span><span class="n">source</span><span class="o">(</span><span class="n">json</span><span class="o">)</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>  <span class="o">}))</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>まずは、260万件のログを送ってスナップショットのサイズを確認してみる. 送信したログのサイズ(100bytes×260万件)とほぼ同じ. そして、同じログを2回投入しても(distinct countなので
+)サイズは増えない. 処理内部で集計した結果を保存している模様.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class='scala'><span class='line'><span class="n">$</span> <span class="n">cat</span> <span class="n">dummy_log</span><span class="o">.</span><span class="n">aa</span> <span class="o">&gt;&gt;</span> <span class="o">/</span><span class="n">tmp</span><span class="o">/</span><span class="n">dummy_log2</span><span class="o">.</span><span class="n">log</span>
+</span><span class='line'><span class="n">$</span> <span class="n">hadoop</span> <span class="n">fs</span> <span class="o">-</span><span class="n">du</span>  <span class="o">/</span><span class="n">apps</span><span class="o">/</span><span class="n">flink</span><span class="o">/</span><span class="n">checkpoints</span><span class="o">/</span><span class="mi">9005988</span><span class="n">ca4dc6e871d50c2b310ed0a63</span>
+</span><span class='line'><span class="mi">26000230</span>  <span class="o">/</span><span class="n">apps</span><span class="o">/</span><span class="n">flink</span><span class="o">/</span><span class="n">checkpoints</span><span class="o">/</span><span class="mi">9005988</span><span class="n">ca4dc6e871d50c2b310ed0a63</span><span class="o">/</span><span class="n">chk</span><span class="o">-</span><span class="mi">183</span>
+</span><span class='line'><span class="n">$</span> <span class="n">cat</span> <span class="n">dummy_log</span><span class="o">.</span><span class="n">aa</span> <span class="o">&gt;&gt;</span> <span class="o">/</span><span class="n">tmp</span><span class="o">/</span><span class="n">dummy_log2</span><span class="o">.</span><span class="n">log</span>
+</span><span class='line'><span class="n">$</span> <span class="n">hadoop</span> <span class="n">fs</span> <span class="o">-</span><span class="n">du</span>  <span class="o">/</span><span class="n">apps</span><span class="o">/</span><span class="n">flink</span><span class="o">/</span><span class="n">checkpoints</span><span class="o">/</span><span class="mi">9005988</span><span class="n">ca4dc6e871d50c2b310ed0a63</span>
+</span><span class='line'><span class="mi">26000230</span>  <span class="o">/</span><span class="n">apps</span><span class="o">/</span><span class="n">flink</span><span class="o">/</span><span class="n">checkpoints</span><span class="o">/</span><span class="mi">9005988</span><span class="n">ca4dc6e871d50c2b310ed0a63</span><span class="o">/</span><span class="n">chk</span><span class="o">-</span><span class="mi">196</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>そして、その時のチェックポイント時間はJobManagerのログから確認できる. 大体6秒くらいかかる. TaskManagerのCPU使用率は定常的に高い.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='scala'><span class='line'><span class="nc">INFO</span>  <span class="n">org</span><span class="o">.</span><span class="n">apache</span><span class="o">.</span><span class="n">flink</span><span class="o">.</span><span class="n">runtime</span><span class="o">.</span><span class="n">checkpoint</span><span class="o">.</span><span class="nc">CheckpointCoordinator</span>     <span class="o">-</span> <span class="nc">Completed</span> <span class="n">checkpoint</span> <span class="mi">43</span> <span class="o">(</span><span class="n">in</span> <span class="mi">6291</span> <span class="n">ms</span><span class="o">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>さらに、260万件を追加で投入するとチェックポイントに10秒〜数十秒かかるようになった. ジョブを実行しているTaskManagerは
+CPU100%になり、スループットも大幅に落ちていた.</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class='scala'><span class='line'><span class="nc">INFO</span>  <span class="n">org</span><span class="o">.</span><span class="n">apache</span><span class="o">.</span><span class="n">flink</span><span class="o">.</span><span class="n">runtime</span><span class="o">.</span><span class="n">checkpoint</span><span class="o">.</span><span class="nc">CheckpointCoordinator</span>     <span class="o">-</span> <span class="nc">Completed</span> <span class="n">checkpoint</span> <span class="mi">145</span> <span class="o">(</span><span class="n">in</span> <span class="mi">41835</span> <span class="n">ms</span><span class="o">)</span>
+</span><span class='line'><span class="nc">INFO</span>  <span class="n">org</span><span class="o">.</span><span class="n">apache</span><span class="o">.</span><span class="n">flink</span><span class="o">.</span><span class="n">runtime</span><span class="o">.</span><span class="n">checkpoint</span><span class="o">.</span><span class="nc">CheckpointCoordinator</span>     <span class="o">-</span> <span class="nc">Completed</span> <span class="n">checkpoint</span> <span class="mi">146</span> <span class="o">(</span><span class="n">in</span> <span class="mi">13530</span> <span class="n">ms</span><span class="o">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><a href="http://mail-archives.apache.org/mod_mbox/flink-user/201604.mbox/%3CCAMvK%3DYpTb6yZiv9ioL7%2Bmdn0W5Q3fRyNL210aGYcjzcbXQWxqg%40mail.gmail.com%3E">MLで聞いてみた</a> ところ、バックエンドでRocksDBを
+試してみたら、とアドバイスをもらったのでやってみたが、変わらなかった. この処理の場合、状態を保存するストアには1レコードしか入らなくて、その値が非常に大きいので、効果が出なかった模様.</p>
+
+<h2>思ったことなど</h2>
+
+<ul>
+<li>ユニークユーザ数等をカウントするようなケースだと、値の種類が数千万というのもあり得るので、上のような性能だと辛い. そして、このような処理の場合、最終的には一箇所にまとめて
+数を数える感じになるので、分散スナップショットの恩恵も受けづらい.</li>
+<li>現行のFlinkだと、スナップショットのたびに保持しているデータを全て書き出すので、incremental snapshotが導入されれば改善されるかも.</li>
+<li>今の時点での対応としては、値のリストをFlinkに保持せずに外部のデータストア(Redisとか)に保持するというのが一つの解決策. その場合、デメリットとしてはスケールアウトが
+制限されることと、障害時などにログがリプレイされることへの対応. ただ、後者については処理の性質上、何度同じデータを投入しても結果は変わらないので、問題にならない.</li>
+<li>もしくは、HyperLogLogのような推定アルゴリズムを使って、精度と引き換えに状態のサイズを削減するか.</li>
+</ul>
+
+
+<p>試しにFlinkで受け取った値をRedisのSETに入れて同じ処理を実現してみたら、あっさり1000万件くらい処理できた. stateが小さい、または分散される場合はFlinkに任せて、
+今回のような一部のケースでは外部のデータストアを使う、というのが現実的だろうか、と思っているところ.</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Apache Flink ContinuousProcessingTimeTriggerの話]]></title>
+    <link href="http://ogibayashi.github.io/blog/2016/04/05/apache-flink-continuousprocessingtimetrigger/"/>
+    <updated>2016-04-05T11:33:23+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2016/04/05/apache-flink-continuousprocessingtimetrigger</id>
+    <content type="html"><![CDATA[<p>(注: window周りのAPIを変えようという話(<a href="https://issues.apache.org/jira/browse/FLINK-3643">FLINK-3643</a>)があるので、以下で書かれている内容は近い将来obsoleteになる可能性があります)</p>
+
+<p>自分のところでは、ストリーム処理のユースケースとして、ある程度長期間のwindowでデータを保持しながら、集計結果は短い間隔で出力したい、というのがある。</p>
+
+<p>例えば、Norikra(Esper)のクエリだとこんな感じ。site_idごとに、過去3日間(72時間)のユニークユーザを集計し、結果は1分ごとに出力する、というもの。 集計対象のwindowは72時間のsliding time windowとなる。こういうwindowが長いケースは、Norikraだとプロセスを再起動したりした時にwindowの内容が全て失われるので辛い。Flinkでいい感じに実装したい。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class='sql'><span class='line'><span class="k">SELECT</span>
+</span><span class='line'>    <span class="n">site_id</span><span class="p">,</span>
+</span><span class='line'>    <span class="k">count</span><span class="p">(</span><span class="k">distinct</span> <span class="n">userkey</span><span class="p">)</span> <span class="k">as</span> <span class="n">num_uu</span>
+</span><span class='line'><span class="k">FROM</span>
+</span><span class='line'>    <span class="n">viewer_log</span><span class="p">.</span><span class="n">win</span><span class="p">:</span><span class="n">time</span><span class="p">(</span><span class="mi">3</span> <span class="k">day</span><span class="p">)</span>
+</span><span class='line'><span class="k">GROUP</span> <span class="k">BY</span>
+</span><span class='line'>    <span class="n">site_id</span>
+</span><span class='line'><span class="k">OUTPUT</span> <span class="k">LAST</span> <span class="k">EVERY</span> <span class="mi">1</span> <span class="k">min</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><a href="https://ci.apache.org/projects/flink/flink-docs-release-1.0/apis/streaming/windows.html">ドキュメント</a>を読むと、以下のようにwindowの定義とは別にいつ計算処理がトリガされるか、いつwindowの中身が削除されるか、を好きに設定できるように見える。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class='scala'><span class='line'><span class="n">keyedStream</span>
+</span><span class='line'>    <span class="o">.</span><span class="n">window</span><span class="o">(</span><span class="nc">SlidingEventTimeWindows</span><span class="o">.</span><span class="n">of</span><span class="o">(</span><span class="nc">Time</span><span class="o">.</span><span class="n">seconds</span><span class="o">(</span><span class="mi">5</span><span class="o">),</span> <span class="nc">Time</span><span class="o">.</span><span class="n">seconds</span><span class="o">(</span><span class="mi">1</span><span class="o">))</span>
+</span><span class='line'>    <span class="o">.</span><span class="n">trigger</span><span class="o">(</span><span class="nc">CountTrigger</span><span class="o">.</span><span class="n">of</span><span class="o">(</span><span class="mi">100</span><span class="o">))</span>
+</span><span class='line'>    <span class="o">.</span><span class="n">evictor</span><span class="o">(</span><span class="nc">CountEvictor</span><span class="o">.</span><span class="n">of</span><span class="o">(</span><span class="mi">10</span><span class="o">));</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>なので、上記のようなものは以下の様なコードで実現できるかと思った。ContinuousProcessingTimeTriggerは、指定した間隔で集計を実行するが、その際にwindowの内容の削除は行わない、というもの。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class='scala'><span class='line'>  <span class="k">def</span> <span class="n">main</span><span class="o">(</span><span class="n">args</span><span class="k">:</span> <span class="kt">Array</span><span class="o">[</span><span class="kt">String</span><span class="o">])</span> <span class="o">{</span>
+</span><span class='line'><span class="c1">//...</span>
+</span><span class='line'>    <span class="k">val</span> <span class="n">input</span> <span class="k">=</span> <span class="n">env</span><span class="o">.</span><span class="n">readFileStream</span><span class="o">(</span><span class="n">fileName</span><span class="o">,</span><span class="mi">100</span><span class="o">,</span><span class="nc">FileMonitoringFunction</span><span class="o">.</span><span class="nc">WatchType</span><span class="o">.</span><span class="nc">PROCESS_ONLY_APPENDED</span><span class="o">)</span>
+</span><span class='line'>      <span class="o">.</span><span class="n">map</span><span class="o">(</span><span class="n">lineToTuple</span><span class="o">(</span><span class="k">_</span><span class="o">))</span>
+</span><span class='line'>      <span class="o">.</span><span class="n">keyBy</span><span class="o">(</span><span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>      <span class="o">.</span><span class="n">timeWindow</span><span class="o">(</span><span class="nc">Time</span><span class="o">.</span><span class="n">of</span><span class="o">(</span><span class="mi">3</span><span class="o">,</span> <span class="nc">TimeUnit</span><span class="o">.</span><span class="nc">DAYS</span><span class="o">))</span>
+</span><span class='line'>      <span class="o">.</span><span class="n">trigger</span><span class="o">(</span><span class="nc">ContinuousProcessingTimeTrigger</span><span class="o">.</span><span class="n">of</span><span class="o">(</span><span class="nc">Time</span><span class="o">.</span><span class="n">seconds</span><span class="o">(</span><span class="mi">60</span><span class="o">)))</span>
+</span><span class='line'>      <span class="o">.</span><span class="n">fold</span><span class="o">((</span><span class="s">&quot;&quot;</span><span class="o">,</span><span class="k">new</span> <span class="n">scala</span><span class="o">.</span><span class="n">collection</span><span class="o">.</span><span class="n">mutable</span><span class="o">.</span><span class="nc">HashSet</span><span class="o">[</span><span class="kt">String</span><span class="o">]())){(</span><span class="n">r</span><span class="o">,</span><span class="n">i</span><span class="o">)</span> <span class="k">=&gt;</span> <span class="o">{</span> <span class="o">(</span><span class="n">i</span><span class="o">.</span><span class="n">_1</span><span class="o">,</span> <span class="n">r</span><span class="o">.</span><span class="n">_2</span> <span class="o">+</span> <span class="n">i</span><span class="o">.</span><span class="n">_2</span><span class="o">)}}</span>
+</span><span class='line'>      <span class="o">.</span><span class="n">map</span><span class="o">{</span><span class="n">x</span> <span class="k">=&gt;</span> <span class="o">(</span><span class="k">new</span> <span class="nc">Timestamp</span><span class="o">(</span><span class="nc">System</span><span class="o">.</span><span class="n">currentTimeMillis</span><span class="o">()),</span> <span class="n">x</span><span class="o">.</span><span class="n">_1</span><span class="o">,</span> <span class="n">x</span><span class="o">.</span><span class="n">_2</span><span class="o">.</span><span class="n">size</span><span class="o">)}</span>
+</span><span class='line'><span class="c1">//...</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>  <span class="k">def</span> <span class="n">lineToTuple</span><span class="o">(</span><span class="n">line</span><span class="k">:</span> <span class="kt">String</span><span class="o">)</span> <span class="k">=</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">val</span> <span class="n">x</span> <span class="k">=</span> <span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="o">(</span><span class="s">&quot;\\W+&quot;</span><span class="o">)</span> <span class="n">filter</span> <span class="o">{</span><span class="k">_</span><span class="o">.</span><span class="n">nonEmpty</span><span class="o">}</span>
+</span><span class='line'>    <span class="o">(</span><span class="n">x</span><span class="o">(</span><span class="mi">0</span><span class="o">),</span><span class="n">x</span><span class="o">(</span><span class="mi">1</span><span class="o">))</span>
+</span><span class='line'>  <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>が、実際には期待どおりに動かないことが分かった。(MLで教えてもらった。<a href="http://mail-archives.apache.org/mod_mbox/flink-user/201603.mbox/%3CCAMvK=YpGWZZQQnPVknGYY07AhieHE+9ELkq0i6Q_72FCghsm-Q@mail.gmail.com%3E">ここ</a>とか<a href="http://mail-archives.apache.org/mod_mbox/flink-user/201603.mbox/%3CCAMvK%3DYo2NMk3Hxhie5Cr9coHS7qZ8ecaGOHHXg96mDB7H9_7Nw%40mail.gmail.com%3E">ここ</a>)</p>
+
+<ul>
+<li>トリガが発火しないケースがある</li>
+<li>timeWindowが終了してもwindow内のデータが削除されない。結果、stateのサイズが増加する一方になる。(.trigger()を呼び出した時点で、元のtimeWindowのトリガは上書きされるらしい)</li>
+</ul>
+
+
+<p>って、これContinuousProcessingTimeTriggerは使えないのでは・・・。</p>
+
+<p>結局、ContinuousProcessingTimeTriggerに修正を入れたカスタムTriggerを作成し、これを使用することで期待する動作をするようになった。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+<span class='line-number'>54</span>
+<span class='line-number'>55</span>
+<span class='line-number'>56</span>
+<span class='line-number'>57</span>
+<span class='line-number'>58</span>
+<span class='line-number'>59</span>
+<span class='line-number'>60</span>
+<span class='line-number'>61</span>
+<span class='line-number'>62</span>
+<span class='line-number'>63</span>
+<span class='line-number'>64</span>
+<span class='line-number'>65</span>
+<span class='line-number'>66</span>
+<span class='line-number'>67</span>
+<span class='line-number'>68</span>
+<span class='line-number'>69</span>
+<span class='line-number'>70</span>
+<span class='line-number'>71</span>
+<span class='line-number'>72</span>
+<span class='line-number'>73</span>
+<span class='line-number'>74</span>
+<span class='line-number'>75</span>
+<span class='line-number'>76</span>
+<span class='line-number'>77</span>
+<span class='line-number'>78</span>
+<span class='line-number'>79</span>
+<span class='line-number'>80</span>
+<span class='line-number'>81</span>
+<span class='line-number'>82</span>
+<span class='line-number'>83</span>
+<span class='line-number'>84</span>
+<span class='line-number'>85</span>
+<span class='line-number'>86</span>
+<span class='line-number'>87</span>
+<span class='line-number'>88</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="nd">@PublicEvolving</span>
+</span><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">MyContinuousProcessingTimeTrigger</span><span class="o">&lt;</span><span class="n">W</span> <span class="kd">extends</span> <span class="n">TimeWindow</span><span class="o">&gt;</span> <span class="kd">extends</span> <span class="n">Trigger</span><span class="o">&lt;</span><span class="n">Object</span><span class="o">,</span> <span class="n">W</span><span class="o">&gt;</span> <span class="o">{</span>
+</span><span class='line'>  <span class="kd">private</span> <span class="kd">static</span> <span class="kd">final</span> <span class="kt">long</span> <span class="n">serialVersionUID</span> <span class="o">=</span> <span class="mi">1L</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="kd">private</span> <span class="kd">final</span> <span class="kt">long</span> <span class="n">interval</span><span class="o">;</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="kd">private</span> <span class="kd">final</span> <span class="n">ValueStateDescriptor</span><span class="o">&lt;</span><span class="n">Long</span><span class="o">&gt;</span> <span class="n">stateDesc</span> <span class="o">=</span>
+</span><span class='line'>          <span class="k">new</span> <span class="n">ValueStateDescriptor</span><span class="o">&lt;&gt;(</span><span class="s">&quot;fire-timestamp&quot;</span><span class="o">,</span> <span class="n">LongSerializer</span><span class="o">.</span><span class="na">INSTANCE</span><span class="o">,</span> <span class="mi">0L</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>  <span class="kd">private</span> <span class="nf">MyContinuousProcessingTimeTrigger</span><span class="o">(</span><span class="kt">long</span> <span class="n">interval</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>      <span class="k">this</span><span class="o">.</span><span class="na">interval</span> <span class="o">=</span> <span class="n">interval</span><span class="o">;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="nd">@Override</span>
+</span><span class='line'>  <span class="kd">public</span> <span class="n">TriggerResult</span> <span class="nf">onElement</span><span class="o">(</span><span class="n">Object</span> <span class="n">element</span><span class="o">,</span> <span class="kt">long</span> <span class="n">timestamp</span><span class="o">,</span> <span class="n">W</span> <span class="n">window</span><span class="o">,</span> <span class="n">TriggerContext</span> <span class="n">ctx</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">Exception</span> <span class="o">{</span>
+</span><span class='line'>      <span class="kt">long</span> <span class="n">currentTime</span> <span class="o">=</span> <span class="n">System</span><span class="o">.</span><span class="na">currentTimeMillis</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>      <span class="n">ValueState</span><span class="o">&lt;</span><span class="n">Long</span><span class="o">&gt;</span> <span class="n">fireState</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="na">getPartitionedState</span><span class="o">(</span><span class="n">stateDesc</span><span class="o">);</span>
+</span><span class='line'>      <span class="kt">long</span> <span class="n">nextFireTimestamp</span> <span class="o">=</span> <span class="n">fireState</span><span class="o">.</span><span class="na">value</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>      <span class="k">if</span> <span class="o">(</span><span class="n">nextFireTimestamp</span> <span class="o">==</span> <span class="mi">0</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>          <span class="kt">long</span> <span class="n">start</span> <span class="o">=</span> <span class="n">currentTime</span> <span class="o">-</span> <span class="o">(</span><span class="n">currentTime</span> <span class="o">%</span> <span class="n">interval</span><span class="o">);</span>
+</span><span class='line'>          <span class="n">fireState</span><span class="o">.</span><span class="na">update</span><span class="o">(</span><span class="n">start</span> <span class="o">+</span> <span class="n">interval</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>          <span class="n">ctx</span><span class="o">.</span><span class="na">registerProcessingTimeTimer</span><span class="o">((</span><span class="n">start</span> <span class="o">+</span> <span class="n">interval</span><span class="o">));</span>
+</span><span class='line'>          <span class="k">return</span> <span class="n">TriggerResult</span><span class="o">.</span><span class="na">CONTINUE</span><span class="o">;</span>
+</span><span class='line'>      <span class="o">}</span>
+</span><span class='line'>      <span class="k">if</span> <span class="o">(</span><span class="n">currentTime</span> <span class="o">&gt;=</span> <span class="n">nextFireTimestamp</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>          <span class="kt">long</span> <span class="n">start</span> <span class="o">=</span> <span class="n">currentTime</span> <span class="o">-</span> <span class="o">(</span><span class="n">currentTime</span> <span class="o">%</span> <span class="n">interval</span><span class="o">);</span>
+</span><span class='line'>          <span class="n">fireState</span><span class="o">.</span><span class="na">update</span><span class="o">(</span><span class="n">start</span> <span class="o">+</span> <span class="n">interval</span><span class="o">);</span>
+</span><span class='line'>
+</span><span class='line'>          <span class="n">ctx</span><span class="o">.</span><span class="na">registerProcessingTimeTimer</span><span class="o">((</span><span class="n">start</span> <span class="o">+</span> <span class="n">interval</span><span class="o">));</span>
+</span><span class='line'>
+</span><span class='line'>          <span class="k">return</span> <span class="n">TriggerResult</span><span class="o">.</span><span class="na">FIRE</span><span class="o">;</span>
+</span><span class='line'>      <span class="o">}</span>
+</span><span class='line'>      <span class="k">return</span> <span class="n">TriggerResult</span><span class="o">.</span><span class="na">CONTINUE</span><span class="o">;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="nd">@Override</span>
+</span><span class='line'>  <span class="kd">public</span> <span class="n">TriggerResult</span> <span class="nf">onEventTime</span><span class="o">(</span><span class="kt">long</span> <span class="n">time</span><span class="o">,</span> <span class="n">W</span> <span class="n">window</span><span class="o">,</span> <span class="n">TriggerContext</span> <span class="n">ctx</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">Exception</span> <span class="o">{</span>
+</span><span class='line'>      <span class="k">return</span> <span class="n">TriggerResult</span><span class="o">.</span><span class="na">CONTINUE</span><span class="o">;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="nd">@Override</span>
+</span><span class='line'>  <span class="kd">public</span> <span class="n">TriggerResult</span> <span class="nf">onProcessingTime</span><span class="o">(</span><span class="kt">long</span> <span class="n">time</span><span class="o">,</span> <span class="n">W</span> <span class="n">window</span><span class="o">,</span> <span class="n">TriggerContext</span> <span class="n">ctx</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">Exception</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>      <span class="n">ValueState</span><span class="o">&lt;</span><span class="n">Long</span><span class="o">&gt;</span> <span class="n">fireState</span> <span class="o">=</span> <span class="n">ctx</span><span class="o">.</span><span class="na">getPartitionedState</span><span class="o">(</span><span class="n">stateDesc</span><span class="o">);</span>
+</span><span class='line'>      <span class="kt">long</span> <span class="n">nextFireTimestamp</span> <span class="o">=</span> <span class="n">fireState</span><span class="o">.</span><span class="na">value</span><span class="o">();</span>
+</span><span class='line'>
+</span><span class='line'>      <span class="c1">// only fire if an element didn&#39;t already fire</span>
+</span><span class='line'>      <span class="kt">long</span> <span class="n">currentTime</span> <span class="o">=</span> <span class="n">System</span><span class="o">.</span><span class="na">currentTimeMillis</span><span class="o">();</span>
+</span><span class='line'>      <span class="k">if</span> <span class="o">(</span><span class="n">currentTime</span> <span class="o">&gt;=</span> <span class="n">nextFireTimestamp</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>          <span class="kt">long</span> <span class="n">start</span> <span class="o">=</span> <span class="n">currentTime</span> <span class="o">-</span> <span class="o">(</span><span class="n">currentTime</span> <span class="o">%</span> <span class="n">interval</span><span class="o">);</span>
+</span><span class='line'>                        <span class="n">fireState</span><span class="o">.</span><span class="na">update</span><span class="o">(</span><span class="mi">0L</span><span class="o">);</span>
+</span><span class='line'>                        <span class="k">if</span> <span class="o">(</span><span class="n">nextFireTimestamp</span> <span class="o">&gt;=</span> <span class="n">window</span><span class="o">.</span><span class="na">getEnd</span><span class="o">())</span> <span class="o">{</span>
+</span><span class='line'>                           <span class="k">return</span> <span class="n">TriggerResult</span><span class="o">.</span><span class="na">FIRE_AND_PURGE</span><span class="o">;</span>
+</span><span class='line'>                        <span class="o">}</span>
+</span><span class='line'>                        <span class="k">else</span> <span class="o">{</span>
+</span><span class='line'>                            <span class="k">return</span> <span class="n">TriggerResult</span><span class="o">.</span><span class="na">FIRE</span><span class="o">;</span>
+</span><span class='line'>                        <span class="o">}</span>
+</span><span class='line'>                <span class="o">}</span>
+</span><span class='line'>      <span class="k">return</span> <span class="n">TriggerResult</span><span class="o">.</span><span class="na">CONTINUE</span><span class="o">;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="nd">@Override</span>
+</span><span class='line'>  <span class="kd">public</span> <span class="kt">void</span> <span class="nf">clear</span><span class="o">(</span><span class="n">W</span> <span class="n">window</span><span class="o">,</span> <span class="n">TriggerContext</span> <span class="n">ctx</span><span class="o">)</span> <span class="kd">throws</span> <span class="n">Exception</span> <span class="o">{}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="nd">@VisibleForTesting</span>
+</span><span class='line'>  <span class="kd">public</span> <span class="kt">long</span> <span class="nf">getInterval</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>      <span class="k">return</span> <span class="n">interval</span><span class="o">;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="nd">@Override</span>
+</span><span class='line'>  <span class="kd">public</span> <span class="n">String</span> <span class="nf">toString</span><span class="o">()</span> <span class="o">{</span>
+</span><span class='line'>      <span class="k">return</span> <span class="s">&quot;ContinuousProcessingTimeTrigger(&quot;</span> <span class="o">+</span> <span class="n">interval</span> <span class="o">+</span> <span class="s">&quot;)&quot;</span><span class="o">;</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="cm">/**</span>
+</span><span class='line'><span class="cm">  * Creates a trigger that continuously fires based on the given interval.</span>
+</span><span class='line'><span class="cm">  *</span>
+</span><span class='line'><span class="cm">  * @param interval The time interval at which to fire.</span>
+</span><span class='line'><span class="cm">  * @param &lt;W&gt; The type of {@link Window Windows} on which this trigger can operate.</span>
+</span><span class='line'><span class="cm">  */</span>
+</span><span class='line'>  <span class="kd">public</span> <span class="kd">static</span> <span class="o">&lt;</span><span class="n">W</span> <span class="kd">extends</span> <span class="n">TimeWindow</span><span class="o">&gt;</span> <span class="n">MyContinuousProcessingTimeTrigger</span><span class="o">&lt;</span><span class="n">W</span><span class="o">&gt;</span> <span class="n">of</span><span class="o">(</span><span class="n">Time</span> <span class="n">interval</span><span class="o">)</span> <span class="o">{</span>
+</span><span class='line'>      <span class="k">return</span> <span class="k">new</span> <span class="n">MyContinuousProcessingTimeTrigger</span><span class="o">&lt;&gt;(</span><span class="n">interval</span><span class="o">.</span><span class="na">toMilliseconds</span><span class="o">());</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[Apache Flinkの性能 - デフォルトのJSONパーサが遅かった話]]></title>
+    <link href="http://ogibayashi.github.io/blog/2016/04/05/apache-flink-performance/"/>
+    <updated>2016-04-05T10:50:12+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2016/04/05/apache-flink-performance</id>
+    <content type="html"><![CDATA[<p>軽くApache Flinkの性能を測ってみた. 構成としては、Fluentd(in_tail→out_kafka_buffered)→Kafka→Flink→Elasticsearchで、仮想アクセスログ的なものに対して、URIごとの件数を1分ごとに集計して出力する、というもの。
+メッセージフォーマットはJSON。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+</pre></td><td class='code'><pre><code class='scala'><span class='line'><span class="k">val</span> <span class="n">env</span> <span class="k">=</span> <span class="nc">StreamExecutionEnvironment</span><span class="o">.</span><span class="n">getExecutionEnvironment</span>
+</span><span class='line'><span class="n">env</span><span class="o">.</span><span class="n">enableCheckpointing</span><span class="o">(</span><span class="mi">1000</span><span class="o">)</span>
+</span><span class='line'><span class="c1">// ....</span>
+</span><span class='line'><span class="k">val</span> <span class="n">stream</span> <span class="k">=</span> <span class="n">env</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">addSource</span><span class="o">(</span><span class="k">new</span> <span class="nc">FlinkKafkaConsumer09</span><span class="o">[</span><span class="kt">String</span><span class="o">](</span><span class="s">&quot;kafka.dummy&quot;</span><span class="o">,</span> <span class="k">new</span> <span class="nc">SimpleStringSchema</span><span class="o">(),</span> <span class="n">properties</span><span class="o">))</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">map</span><span class="o">{</span> <span class="n">json</span> <span class="k">=&gt;</span> <span class="nc">JSON</span><span class="o">.</span><span class="n">parseFull</span><span class="o">(</span><span class="n">json</span><span class="o">).</span><span class="n">get</span><span class="o">.</span><span class="n">asInstanceOf</span><span class="o">[</span><span class="kt">Map</span><span class="o">[</span><span class="kt">String</span>, <span class="kt">AnyRef</span><span class="o">]]</span> <span class="o">}</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">map</span><span class="o">{</span> <span class="n">x</span> <span class="k">=&gt;</span> <span class="n">x</span><span class="o">.</span><span class="n">get</span><span class="o">(</span><span class="s">&quot;uri&quot;</span><span class="o">)</span> <span class="k">match</span> <span class="o">{</span>
+</span><span class='line'>    <span class="k">case</span> <span class="nc">Some</span><span class="o">(</span><span class="n">y</span><span class="o">)</span> <span class="k">=&gt;</span> <span class="o">(</span><span class="n">y</span><span class="o">.</span><span class="n">asInstanceOf</span><span class="o">[</span><span class="kt">String</span><span class="o">],</span><span class="mi">1</span><span class="o">)</span>
+</span><span class='line'>    <span class="k">case</span> <span class="nc">None</span> <span class="k">=&gt;</span> <span class="o">(</span><span class="s">&quot;&quot;</span><span class="o">,</span> <span class="mi">1</span><span class="o">)</span>
+</span><span class='line'>  <span class="o">}}</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">keyBy</span><span class="o">(</span><span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">timeWindow</span><span class="o">(</span><span class="nc">Time</span><span class="o">.</span><span class="n">of</span><span class="o">(</span><span class="mi">1</span><span class="o">,</span> <span class="nc">TimeUnit</span><span class="o">.</span><span class="nc">MINUTES</span><span class="o">))</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">sum</span><span class="o">(</span><span class="mi">1</span><span class="o">)</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">map</span><span class="o">{</span> <span class="n">x</span> <span class="k">=&gt;</span> <span class="o">(</span><span class="nc">System</span><span class="o">.</span><span class="n">currentTimeMillis</span><span class="o">(),</span> <span class="n">x</span><span class="o">)}</span>
+</span><span class='line'>  <span class="o">.</span><span class="n">addSink</span><span class="o">(</span><span class="k">new</span> <span class="nc">ElasticsearchSink</span><span class="o">(</span><span class="n">config</span><span class="o">,</span> <span class="n">transports</span><span class="o">,</span> <span class="k">new</span> <span class="nc">IndexRequestBuilder</span><span class="o">[</span><span class="kt">Tuple2</span><span class="o">[</span><span class="kt">Long</span>, <span class="kt">Tuple2</span><span class="o">[</span><span class="kt">String</span>, <span class="kt">Int</span><span class="o">]]]</span>  <span class="o">{</span>
+</span><span class='line'>    <span class="k">override</span> <span class="k">def</span> <span class="n">createIndexRequest</span><span class="o">(</span><span class="n">element</span><span class="k">:</span> <span class="kt">Tuple2</span><span class="o">[</span><span class="kt">Long</span>, <span class="kt">Tuple2</span><span class="o">[</span><span class="kt">String</span>, <span class="kt">Int</span><span class="o">]],</span> <span class="n">ctx</span><span class="k">:</span> <span class="kt">RuntimeContext</span><span class="o">)</span><span class="k">:</span> <span class="kt">IndexRequest</span> <span class="o">=</span> <span class="o">{</span>
+</span><span class='line'>      <span class="k">val</span> <span class="n">json</span> <span class="k">=</span> <span class="k">new</span> <span class="nc">HashMap</span><span class="o">[</span><span class="kt">String</span>, <span class="kt">AnyRef</span><span class="o">]</span>
+</span><span class='line'>      <span class="n">json</span><span class="o">.</span><span class="n">put</span><span class="o">(</span><span class="s">&quot;@timestamp&quot;</span><span class="o">,</span> <span class="k">new</span> <span class="nc">Timestamp</span><span class="o">(</span><span class="n">element</span><span class="o">.</span><span class="n">_1</span><span class="o">))</span>
+</span><span class='line'>      <span class="n">json</span><span class="o">.</span><span class="n">put</span><span class="o">(</span><span class="s">&quot;uri&quot;</span><span class="o">,</span> <span class="n">element</span><span class="o">.</span><span class="n">_2</span><span class="o">.</span><span class="n">_1</span><span class="o">)</span>
+</span><span class='line'>      <span class="n">json</span><span class="o">.</span><span class="n">put</span><span class="o">(</span><span class="s">&quot;count&quot;</span><span class="o">,</span> <span class="n">element</span><span class="o">.</span><span class="n">_2</span><span class="o">.</span><span class="n">_2</span><span class="k">:</span> <span class="kt">java.lang.Integer</span><span class="o">)</span>
+</span><span class='line'>      <span class="n">println</span><span class="o">(</span><span class="s">&quot;SENDING: &quot;</span> <span class="o">+</span> <span class="n">element</span><span class="o">)</span>
+</span><span class='line'>      <span class="nc">Requests</span><span class="o">.</span><span class="n">indexRequest</span><span class="o">.</span><span class="n">index</span><span class="o">(</span><span class="s">&quot;dummy2&quot;</span><span class="o">).</span><span class="n">`type`</span><span class="o">(</span><span class="s">&quot;my-type&quot;</span><span class="o">).</span><span class="n">source</span><span class="o">(</span><span class="n">json</span><span class="o">)</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'>  <span class="o">}))</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>環境は以下の通り</p>
+
+<ul>
+<li>Kafka : 8vCPU, 8GBMemoryのVM*3, HDP2.4 (Kafka-0.9)
+
+<ul>
+<li>パーティション数は1なので、実質broker1台</li>
+</ul>
+</li>
+<li>Flink : JobManager, TaskManagerともに8vCPU, 8GBMemoryのVM (Flink-1.0.0)
+
+<ul>
+<li>TaskManagerは3台だが、ジョブ並列度を1にしたので1台でしか動かない状態</li>
+</ul>
+</li>
+<li>Elasticsearch: 4CPU, 4GB MemoryのVM*1 (Elasticsearch 1.7.2)</li>
+</ul>
+
+
+<p>URIは9種類なので、Elasticsearchには毎分9レコードが出力されることにいなる。 Elasticsearchに出力されたURIごとの件数を1分単位に合計したものを、Flinkのスループットと考える。 レコードの生成には <a href="https://github.com/sonots/dummer">dummer</a>を使用した。</p>
+
+<p>で、普通にやったら2,000msg/secの入力を与えて、89,000msg/min = 1,483msg/secしか処理できなかった。FlinkプロセスのCPUが100%(1CPU使いきり)となり、Kafkaのlagが増えていく状態。
+チェックポイント外したりESへの出力をやめたりしてみたのだけど、性能はさほど変わらず。</p>
+
+<p>何にCPUを食っているんだろう？と思って、Flinkプロセスのjstackを何回か取ってみたら、こんな感じでJSONのパースを実行中であるケースが殆んどだった。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class='scala'><span class='line'>    <span class="n">at</span> <span class="n">scala</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">parsing</span><span class="o">.</span><span class="n">combinator</span><span class="o">.</span><span class="nc">Parsers$$anon$2</span><span class="o">.</span><span class="n">apply</span><span class="o">(</span><span class="nc">Parsers</span><span class="o">.</span><span class="n">scala</span><span class="k">:</span><span class="err">881</span><span class="o">)</span>
+</span><span class='line'>    <span class="n">at</span> <span class="n">scala</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">parsing</span><span class="o">.</span><span class="n">json</span><span class="o">.</span><span class="nc">JSON</span><span class="n">$</span><span class="o">.</span><span class="n">parseRaw</span><span class="o">(</span><span class="nc">JSON</span><span class="o">.</span><span class="n">scala</span><span class="k">:</span><span class="err">51</span><span class="o">)</span>
+</span><span class='line'>    <span class="n">at</span> <span class="n">scala</span><span class="o">.</span><span class="n">util</span><span class="o">.</span><span class="n">parsing</span><span class="o">.</span><span class="n">json</span><span class="o">.</span><span class="nc">JSON</span><span class="n">$</span><span class="o">.</span><span class="n">parseFull</span><span class="o">(</span><span class="nc">JSON</span><span class="o">.</span><span class="n">scala</span><span class="k">:</span><span class="err">65</span><span class="o">)</span>
+</span><span class='line'>    <span class="n">at</span> <span class="nc">KafkaTest3$$anonfun$1</span><span class="o">.</span><span class="n">apply</span><span class="o">(</span><span class="nc">KafkaTest3</span><span class="o">.</span><span class="n">scala</span><span class="k">:</span><span class="err">46</span><span class="o">)</span>
+</span><span class='line'>    <span class="n">at</span> <span class="nc">KafkaTest3$$anonfun$1</span><span class="o">.</span><span class="n">apply</span><span class="o">(</span><span class="nc">KafkaTest3</span><span class="o">.</span><span class="n">scala</span><span class="k">:</span><span class="err">46</span><span class="o">)</span>
+</span><span class='line'>    <span class="n">at</span> <span class="n">org</span><span class="o">.</span><span class="n">apache</span><span class="o">.</span><span class="n">flink</span><span class="o">.</span><span class="n">streaming</span><span class="o">.</span><span class="n">api</span><span class="o">.</span><span class="n">scala</span><span class="o">.</span><span class="nc">DataStream$$anon$4</span><span class="o">.</span><span class="n">map</span><span class="o">(</span><span class="nc">DataStream</span><span class="o">.</span><span class="n">scala</span><span class="k">:</span><span class="err">485</span><span class="o">)</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ということで、パーサをJacksonにしてみた。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+</pre></td><td class='code'><pre><code class='scala'><span class='line'>  <span class="k">val</span> <span class="n">mapper</span> <span class="k">=</span> <span class="k">new</span> <span class="nc">ObjectMapper</span><span class="o">()</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">def</span> <span class="n">main</span><span class="o">(</span><span class="n">args</span><span class="k">:</span> <span class="kt">Array</span><span class="o">[</span><span class="kt">String</span><span class="o">])</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">val</span> <span class="n">env</span> <span class="k">=</span> <span class="nc">StreamExecutionEnvironment</span><span class="o">.</span><span class="n">getExecutionEnvironment</span>
+</span><span class='line'>    <span class="n">env</span><span class="o">.</span><span class="n">enableCheckpointing</span><span class="o">(</span><span class="mi">1000</span><span class="o">)</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="c1">// ...</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="k">val</span> <span class="n">stream</span> <span class="k">=</span> <span class="n">env</span>
+</span><span class='line'>     <span class="o">.</span><span class="n">addSource</span><span class="o">(</span><span class="k">new</span> <span class="nc">FlinkKafkaConsumer09</span><span class="o">[</span><span class="kt">String</span><span class="o">](</span><span class="s">&quot;kafka.json&quot;</span><span class="o">,</span> <span class="k">new</span> <span class="nc">SimpleStringSchema</span><span class="o">(),</span> <span class="n">properties</span><span class="o">))</span>
+</span><span class='line'>      <span class="o">.</span><span class="n">map</span><span class="o">(</span><span class="n">parseJson</span><span class="o">(</span><span class="k">_</span><span class="o">))</span>
+</span><span class='line'>      <span class="o">.</span><span class="n">map</span><span class="o">{</span> <span class="n">x</span><span class="k">=&gt;</span> <span class="o">(</span><span class="n">x</span><span class="o">.</span><span class="n">get</span><span class="o">(</span><span class="s">&quot;uri&quot;</span><span class="o">).</span><span class="n">asInstanceOf</span><span class="o">[</span><span class="kt">String</span><span class="o">],</span> <span class="mi">1</span><span class="o">)}</span>
+</span><span class='line'>      <span class="o">.</span><span class="n">keyBy</span><span class="o">(</span><span class="mi">0</span><span class="o">)</span>
+</span><span class='line'>      <span class="o">.</span><span class="n">timeWindow</span><span class="o">(</span><span class="nc">Time</span><span class="o">.</span><span class="n">of</span><span class="o">(</span><span class="mi">1</span><span class="o">,</span> <span class="nc">TimeUnit</span><span class="o">.</span><span class="nc">MINUTES</span><span class="o">))</span>
+</span><span class='line'>      <span class="o">.</span><span class="n">sum</span><span class="o">(</span><span class="mi">1</span><span class="o">)</span>
+</span><span class='line'>      <span class="o">.</span><span class="n">map</span><span class="o">{</span> <span class="n">x</span> <span class="k">=&gt;</span> <span class="o">(</span><span class="nc">System</span><span class="o">.</span><span class="n">currentTimeMillis</span><span class="o">(),</span> <span class="n">x</span><span class="o">)}</span>
+</span><span class='line'>      <span class="o">.</span><span class="n">addSink</span><span class="o">(</span><span class="k">new</span> <span class="nc">ElasticsearchSink</span><span class="o">(</span><span class="n">config</span><span class="o">,</span> <span class="n">transports</span><span class="o">,</span> <span class="k">new</span> <span class="nc">IndexRequestBuilder</span><span class="o">[</span><span class="kt">Tuple2</span><span class="o">[</span><span class="kt">Long</span>, <span class="kt">Tuple2</span><span class="o">[</span><span class="kt">String</span>, <span class="kt">Int</span><span class="o">]]]</span>  <span class="o">{</span>
+</span><span class='line'>        <span class="k">override</span> <span class="k">def</span> <span class="n">createIndexRequest</span><span class="o">(</span><span class="n">element</span><span class="k">:</span> <span class="kt">Tuple2</span><span class="o">[</span><span class="kt">Long</span>, <span class="kt">Tuple2</span><span class="o">[</span><span class="kt">String</span>, <span class="kt">Int</span><span class="o">]],</span> <span class="n">ctx</span><span class="k">:</span> <span class="kt">RuntimeContext</span><span class="o">)</span><span class="k">:</span> <span class="kt">IndexRequest</span> <span class="o">=</span> <span class="o">{</span>
+</span><span class='line'>          <span class="k">val</span> <span class="n">json</span> <span class="k">=</span> <span class="k">new</span> <span class="nc">HashMap</span><span class="o">[</span><span class="kt">String</span>, <span class="kt">AnyRef</span><span class="o">]</span>
+</span><span class='line'>          <span class="n">json</span><span class="o">.</span><span class="n">put</span><span class="o">(</span><span class="s">&quot;@timestamp&quot;</span><span class="o">,</span> <span class="k">new</span> <span class="nc">Timestamp</span><span class="o">(</span><span class="n">element</span><span class="o">.</span><span class="n">_1</span><span class="o">))</span>
+</span><span class='line'>          <span class="n">json</span><span class="o">.</span><span class="n">put</span><span class="o">(</span><span class="s">&quot;uri&quot;</span><span class="o">,</span> <span class="n">element</span><span class="o">.</span><span class="n">_2</span><span class="o">.</span><span class="n">_1</span><span class="o">)</span>
+</span><span class='line'>          <span class="n">json</span><span class="o">.</span><span class="n">put</span><span class="o">(</span><span class="s">&quot;count&quot;</span><span class="o">,</span> <span class="n">element</span><span class="o">.</span><span class="n">_2</span><span class="o">.</span><span class="n">_2</span><span class="k">:</span> <span class="kt">java.lang.Integer</span><span class="o">)</span>
+</span><span class='line'>          <span class="nc">Requests</span><span class="o">.</span><span class="n">indexRequest</span><span class="o">.</span><span class="n">index</span><span class="o">(</span><span class="s">&quot;dummy2&quot;</span><span class="o">).</span><span class="n">`type`</span><span class="o">(</span><span class="s">&quot;my-type&quot;</span><span class="o">).</span><span class="n">source</span><span class="o">(</span><span class="n">json</span><span class="o">)</span>
+</span><span class='line'>        <span class="o">}</span>
+</span><span class='line'>      <span class="o">}))</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">env</span><span class="o">.</span><span class="n">execute</span><span class="o">(</span><span class="s">&quot;KafkaTest9&quot;</span><span class="o">)</span>
+</span><span class='line'>  <span class="o">}</span>
+</span><span class='line'>
+</span><span class='line'>  <span class="k">def</span> <span class="n">parseJson</span><span class="o">(</span><span class="n">x</span><span class="k">:</span> <span class="kt">String</span><span class="o">)</span><span class="k">:</span> <span class="kt">Map</span><span class="o">[</span><span class="kt">String</span>,<span class="kt">AnyRef</span><span class="o">]</span> <span class="k">=</span> <span class="o">{</span>
+</span><span class='line'>
+</span><span class='line'>    <span class="n">mapper</span><span class="o">.</span><span class="n">readValue</span><span class="o">(</span><span class="n">x</span><span class="o">,</span><span class="n">classOf</span><span class="o">[</span><span class="kt">Map</span><span class="o">[</span><span class="kt">String</span>,<span class="kt">AnyRef</span><span class="o">]])</span>
+</span><span class='line'>  <span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>そうしたら、スループットが大幅に向上して900,000msg/min=15,000msg/secを20%程度のCPU(1CPUの5分の1)で処理できた。</p>
+
+<p><a href="http://www.slideshare.net/nestorhp/scala-json-features-and-performance">http://www.slideshare.net/nestorhp/scala-json-features-and-performance</a> にScalaで使えるJSONライブラリを比較したスライドがあるのだけど、
+これを見るとScala標準のパーサと、その他のライブラリで速度が3桁くらい違う。えーーー、、、</p>
+
+<p>ともあれ、十分に実用的な性能が出そうであることがわかったので良かった。</p>
 ]]></content>
   </entry>
   
@@ -252,6 +988,84 @@ Excel、好きではないけどやっぱり手軽で素晴らしいツールな
 <p>あと、本題とは関係ないけど、懇親会の中で同僚と話していて、日頃仕事でやっていることとか、公開できる範囲でブログに書いて世の中に共有することは大事だよね、という話になった。自分もそういう記事に多分にお世話になっているので。ということで、まずは忘れないうちにこの記事を書いておこう、と思った次第です。(誰かの役は立たなそうだけど、まずは書く、ということで)</p>
 
 <p>最後に、運営に関わられた方々、発表者の方々、どうもありがとうございました。各発表も、運営周りも、ランチも懇親会も素晴らしかったです。</p>
+]]></content>
+  </entry>
+  
+  <entry>
+    <title type="html"><![CDATA[EsperのEPLでjava methodとGROUP Byを使ったらレコードが重複した話]]></title>
+    <link href="http://ogibayashi.github.io/blog/2015/08/13/esper-and-java-method/"/>
+    <updated>2015-08-13T10:19:29+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2015/08/13/esper-and-java-method</id>
+    <content type="html"><![CDATA[<p>Norikraで以下の様な感じの、GROUP BYして、SELECTの中でjavaメソッドを使うようなクエリを登録していたのだけど、なんか生成されるイベントが多い、というのが発端で調べてみた.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>SELECT str, str.split(",") as splitted, count(*) as cnt FROM str_stream.win:time_batch(10 sec) GROUP BY str</span></code></pre></td></tr></table></div></figure>
+
+
+<p>上記のクエリを登録した状態で、以下のようにイベントを投入する.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ echo '{"str":"a,b,c"}' | norikra-client event send str_stream
+</span><span class='line'>$ echo '{"str":"a,b,c"}' | norikra-client event send str_stream
+</span><span class='line'>$ echo '{"str":"a,b,c"}' | norikra-client event send str_stream</span></code></pre></td></tr></table></div></figure>
+
+
+<p>と、こんな感じで同じようなレコードが重複して生成される. <code>count(*)</code>は正しくカウントされているのだが、GROUP BYしているので1レコードになってて欲しい.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>$ norikra-client event sweep
+</span><span class='line'>{"time":"2015/07/31 12:06:52","query":"splittest","str":"a,b,c","splitted":["a","b","c"],"cnt":3}
+</span><span class='line'>{"time":"2015/07/31 12:06:52","query":"splittest","str":"a,b,c","splitted":["a","b","c"],"cnt":3}
+</span><span class='line'>{"time":"2015/07/31 12:06:52","query":"splittest","str":"a,b,c","splitted":["a","b","c"],"cnt":3}</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Norikraではなく、Esperで同じことを実験してみても発生するので、Esperの事象っぽい.<a href="http://www.espertech.com/esper/release-5.2.0/esper-reference/html/processingmodel.html">公式ドキュメント</a>の&#8221;3.7.2. Output for Aggregation and Group-By&#8221;を見ると、以下の様な記述がある。 GROUP BYの中に無いフィールドをSELECTすると、入力イベントと同じ数の出力イベントが発生するよ、という話.</p>
+
+<blockquote><p>If your statement selects non-aggregated properties and aggregation values, and groups only some properties using the group by clause, your statement may look as below:</p>
+
+<p> select account, accountName, sum(amount)
+from Withdrawal.win:time_batch(1 sec)
+group by account</p>
+
+<p>At the end of a time interval, the engine posts to listeners one row per event. The aggregation result aggregates per unique account.</p></blockquote>
+
+<p>とは言え、GROUP BYの中に<code>str.split(",")</code>を入れても同じ. 値は同じでも、Stringクラスのオブジェクトは別になってしまうからなのかなぁ. 一応、回避策としてはfirsteverという、イベントの中で最初の値だけを取る関数があるので、<code>firstever(str.split(","))</code>のようにすると1レコードに集約できた.</p>
+
+<p>Issueで聞いてみた.
+<a href="https://github.com/espertechinc/esper/issues/18">https://github.com/espertechinc/esper/issues/18</a></p>
+
+<p>若干うまく伝わらなかった気がするけど、javaメソッドではなく同等の機能を持つUDFを作ればうまくいくよ、ということらしい。実際、EsperのUDFを作ってみたら、ちゃんと集約された。</p>
+
+<p>ちなみに、EsperのUDFを作るのは簡単で、以下のようにstaticなメソッドを持つクラスを作って</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="kd">public</span> <span class="kd">class</span> <span class="nc">MyUtilityClass</span> <span class="o">{</span>
+</span><span class='line'>    <span class="kd">public</span> <span class="kd">static</span> <span class="n">String</span><span class="o">[]</span> <span class="nf">split</span><span class="o">(</span><span class="n">String</span> <span class="n">str</span><span class="o">,</span> <span class="n">String</span> <span class="n">regex</span><span class="o">){</span>
+</span><span class='line'>        <span class="k">return</span> <span class="n">str</span><span class="o">.</span><span class="na">split</span><span class="o">(</span><span class="n">regex</span><span class="o">);</span>
+</span><span class='line'>    <span class="o">}</span>
+</span><span class='line'><span class="o">}</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ConfigurationクラスのaddPlugInSingleRowFunctionメソッドで、function名、クラス名、メソッド名を渡してやれば良い。</p>
+
+<figure class='code'><figcaption><span></span></figcaption><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class='java'><span class='line'><span class="n">addPlugInSingleRowFunction</span><span class="o">(</span><span class="s">&quot;split&quot;</span><span class="o">,</span> <span class="n">MyUtilityClass</span><span class="o">.</span><span class="na">class</span><span class="o">.</span><span class="na">getName</span><span class="o">(),</span> <span class="s">&quot;split&quot;</span><span class="o">);</span>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>まあ、都度UDF作るのも面倒なので、firsteverで回避出来る場合はそうするかなぁ.</p>
+
+<p>そんな話でした.</p>
 ]]></content>
   </entry>
   

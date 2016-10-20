@@ -9,7 +9,7 @@
   <meta name="author" content="OGIBAYASHI Hironori">
 
   
-  <meta name="description" content="Getting Stated with OpenShiftを読んだので、簡単にまとめ. とりあえず4章まで. この本について OpenShiftの管理者ではなく、Webアプリケーション開発者向けの本. OpenShift Onlineを使って、どのようにWebアプリケーションを動かすことができるか &hellip;">
+  <meta name="description" content="Fluentdに対して、in_httpのインタフェースで送信してくるアプリケーションがあるのだけど、そのアプリケーションに対してリリースがあった後、一部のメッセージがうまく送れないという話があった. 見てみたら、受信側Fluentdに以下のようなメッセージが多発していた. &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -63,6 +63,1389 @@
     <div id="content">
       <div class="blog-index">
   
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/02/28/incompatible-character-encodings-in-fluentd/">Fluentdで Incompatible Character Encodingのエラーが出た話</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2015-02-28T22:24:31+09:00" pubdate data-updated="true">Feb 28<span>th</span>, 2015</time>
+        
+           | <a href="/blog/2015/02/28/incompatible-character-encodings-in-fluentd/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2015/02/28/incompatible-character-encodings-in-fluentd/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>Fluentdに対して、in_httpのインタフェースで送信してくるアプリケーションがあるのだけど、そのアプリケーションに対してリリースがあった後、一部のメッセージがうまく送れないという話があった. 見てみたら、受信側Fluentdに以下のようなメッセージが多発していた. fluentdのバージョンは0.10.48.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2015-02-06 14:14:52 +0900 [warn]: fluent/engine.rb:156:rescue in emit_stream: em
+</span><span class='line'>it transaction failed  error_class=Encoding::CompatibilityError error=#&lt;Encoding
+</span><span class='line'>::CompatibilityError: incompatible character encodings: ASCII-8BIT and UTF-8&gt;
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:32:in
+</span><span class='line'>`&lt;&lt;'
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:32:in
+</span><span class='line'>`to_msgpack'
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:32:in
+</span><span class='line'>`block in to_msgpack_stream'
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:54:in
+</span><span class='line'>`call'
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:54:in
+</span><span class='line'>`each'
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/event.rb:31:in
+</span><span class='line'>`to_msgpack_stream'
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/output.rb:424:i
+</span><span class='line'>n `emit'
+</span><span class='line'>  2015-02-06 14:14:52 +0900 [warn]: plugin/in_http.rb:147:on_request: /opt/td-ag
+</span><span class='line'>ent/embedded/lib/ruby/gems/2.1.0/gems/fluentd-0.10.48/lib/fluent/output.rb:33:in
+</span><span class='line'> `next'
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>全てのメッセージが送れてないわけではない模様. 適当なメッセージをcurlで送ってみても問題ないので
+なんだろう、、、と思っていたら、以下のpull requestを見つけた. 偶然、事象が発生したのと同日.</p>
+
+<p><a href="https://github.com/fluent/fluentd/pull/550">https://github.com/fluent/fluentd/pull/550</a></p>
+
+<p>Messagepackの不具合?で、5KBを超える、且つエンコードがASCII-8BIT以外の文字列をシリアライズしようとした時に、このエラーが出ることがあるそうな. msgpack 0.5.11で修正.</p>
+
+<p>アプリケーションの人に聞いてみると、確かにメッセージサイズは大幅に増えているようだし、エラー発生時のパケットを見ても、メッセージサイズが数百KBととても大きい. このpull requestは v0.10.60で取り込まれているようなので、td-agentを2.1.4に上げてテストをしてみたら発生しなくなった.</p>
+
+<p>もっと前にこれが発生してたら困ってただろうな. ちょうど修正されてて助かりました.</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/01/27/hdp2-dot-2-resoruce-manager-could-not-transition-to-active/">HDP2.2でResourceManagerが両系standbyになった事象</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2015-01-27T17:45:06+09:00" pubdate data-updated="true">Jan 27<span>th</span>, 2015</time>
+        
+           | <a href="/blog/2015/01/27/hdp2-dot-2-resoruce-manager-could-not-transition-to-active/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2015/01/27/hdp2-dot-2-resoruce-manager-could-not-transition-to-active/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>HDP2.2で、daemonやクラスタの再起動を繰り返していた所、ResourceManagerが両系standbyになってしまった.</p>
+
+<p>ResourceManagerのログには以下のように出力されている.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2015-01-16 16:29:19,495 WARN  resourcemanager.RMAuditLogger
+</span><span class='line'>(RMAuditLogger.java:logFailure(285)) - USER=yarn
+</span><span class='line'>OPERATION=transitionToActive    TARGET=RMHAProtocolService
+</span><span class='line'>RESULT=FAILURE  DESCRIPTION=Exception transitioning to active
+</span><span class='line'>PERMISSIONS=All users are allowed
+</span><span class='line'>2015-01-16 16:29:19,495 WARN  ha.ActiveStandbyElector
+</span><span class='line'>(ActiveStandbyElector.java:becomeActive(809)) - Exception handling the
+</span><span class='line'>winning of election
+</span><span class='line'>org.apache.hadoop.ha.ServiceFailedException: RM could not transition to Active
+</span><span class='line'>        at org.apache.hadoop.yarn.server.resourcemanager.EmbeddedElectorService.becomeActive(EmbeddedElectorService.java:128)
+</span><span class='line'>        at org.apache.hadoop.ha.ActiveStandbyElector.becomeActive(ActiveStandbyElector.java:805)
+</span><span class='line'>        at org.apache.hadoop.ha.ActiveStandbyElector.processResult(ActiveStandbyElector.java:416)
+</span><span class='line'>        at org.apache.zookeeper.ClientCnxn$EventThread.processEvent(ClientCnxn.java:599)
+</span><span class='line'>        at org.apache.zookeeper.ClientCnxn$EventThread.run(ClientCnxn.java:498)
+</span><span class='line'>Caused by: org.apache.hadoop.ha.ServiceFailedException: Error when
+</span><span class='line'>transitioning to Active mode
+</span><span class='line'>        at org.apache.hadoop.yarn.server.resourcemanager.AdminService.transitionToActive(AdminService.java:304)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.resourcemanager.EmbeddedElectorService.becomeActive(EmbeddedElectorService.java:126)
+</span><span class='line'>        ... 4 more
+</span><span class='line'>Caused by: org.apache.hadoop.service.ServiceStateException:
+</span><span class='line'>org.apache.hadoop.yarn.exceptions.YarnException: Application with id
+</span><span class='line'>application_1421115867116_0001 is already present! Cannot add a
+</span><span class='line'>duplicate!
+</span><span class='line'>        at org.apache.hadoop.service.ServiceStateException.convert(ServiceStateException.java:59)
+</span><span class='line'>        at org.apache.hadoop.service.AbstractService.start(AbstractService.java:204)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.resourcemanager.ResourceManager.startActiveServices(ResourceManager.java:1014)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.resourcemanager.ResourceManager$1.run(ResourceManager.java:1051)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.resourcemanager.ResourceManager$1.run(ResourceManager.java:1047)
+</span><span class='line'>        at java.security.AccessController.doPrivileged(Native Method)
+</span><span class='line'>        at javax.security.auth.Subject.doAs(Subject.java:415)
+</span><span class='line'>        at org.apache.hadoop.security.UserGroupInformation.doAs(UserGroupInformation.java:1628)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.resourcemanager.ResourceManager.transitionToActive(ResourceManager.java:1047)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.resourcemanager.AdminService.transitionToActive(AdminService.java:295)
+</span><span class='line'>        ... 5 more
+</span><span class='line'>Caused by: org.apache.hadoop.yarn.exceptions.YarnException:
+</span><span class='line'>Application with id application_1421115867116_0001 is already present!
+</span><span class='line'>Cannot add a duplicate!
+</span><span class='line'>        at org.apache.hadoop.yarn.ipc.RPCUtil.getRemoteException(RPCUtil.java:45)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.resourcemanager.RMAppManager.createAndPopulateNewRMApp(RMAppManager.java:338)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.resourcemanager.RMAppManager.recoverApplication(RMAppManager.java:309)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.resourcemanager.RMAppManager.recover(RMAppManager.java:413)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.resourcemanager.ResourceManager.recover(ResourceManager.java:1207)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.resourcemanager.ResourceManager$RMActiveServices.serviceStart(ResourceManager.java:590)
+</span><span class='line'>        at org.apache.hadoop.service.AbstractService.start(AbstractService.java:193)
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>Zookeeperに変なエントリが残ってる？と思われたのでRMを停止した上で<code>/rmstore/ZKRMStateRoot/RMAppRoot/</code>以下のApplicatoinIDのエントリを全て削除.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[zk: localhost:2181(CONNECTED) 2] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421387925857_0002
+</span><span class='line'>[zk: localhost:2181(CONNECTED) 3] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421115867116_0002
+</span><span class='line'>[zk: localhost:2181(CONNECTED) 4] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421115867116_0003
+</span><span class='line'>[zk: localhost:2181(CONNECTED) 5] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421115867116_0004
+</span><span class='line'>[zk: localhost:2181(CONNECTED) 6] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421320519530_0002
+</span><span class='line'>[zk: localhost:2181(CONNECTED) 7] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421115867116_0005
+</span><span class='line'>[zk: localhost:2181(CONNECTED) 8] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421320519530_0001
+</span><span class='line'>[zk: localhost:2181(CONNECTED) 11] rmr /rmstore/ZKRMStateRoot/RMAppRoot/application_1421387925857_0001
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>で、RMを起動したら復旧した.</p>
+
+<p>どうやら<a href="https://issues.apache.org/jira/browse/YARN-2865">YARN-2865</a>の事象っぽい. Hadoop 2.7.0でFIX. ZK上のエントリを消してしまったので、その分のジョブについてはクライアントから再投入する必要がある.</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2015/01/06/hdp2-dot-2-installation-memo/">HDP2.2をセットアップするためにハマった箇所のメモ</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2015-01-06T20:53:54+09:00" pubdate data-updated="true">Jan 6<span>th</span>, 2015</time>
+        
+           | <a href="/blog/2015/01/06/hdp2-dot-2-installation-memo/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2015/01/06/hdp2-dot-2-installation-memo/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>HDP2.2を手元のVMで試しにセットアップしてみたが、色々ハマった部分があったのでメモ</p>
+
+<h2>環境</h2>
+
+<p>CentOS6.3のVMを7つ用意して、以下のようにHA含めて構成することにした.</p>
+
+<ul>
+<li>master1: NameNode(active), ZKFC, JournalNode, Zookeeper</li>
+<li>master2: NameNode(standby), ZKFC, JournalNode, ResourceManager(standby), Zookeeper</li>
+<li>master3: JournalNode, ResourceManager(active), Zookeeper, HiveServer2, MySQL</li>
+<li>slaves(3ノード): DataNode, NodeManager</li>
+<li>client: MR/Tez client</li>
+</ul>
+
+
+<p>ドキュメントは、こちらの&#8221;Installing HDP Manually&#8221;を使用.
+<a href="http://docs.hortonworks.com/HDPDocuments/HDP2/HDP-2.2.0/HDP_Man_Install_v22/index.html">http://docs.hortonworks.com/HDPDocuments/HDP2/HDP-2.2.0/HDP_Man_Install_v22/index.html</a></p>
+
+<h2>トラブルシュートなどのメモ</h2>
+
+<p>以下、ドキュメントには無いが変更しないといけなかったもの、引っかかったトラブルなど. 単に自分が手順を見落としていたり、間違っていたために発生したものもあるかも.</p>
+
+<h3>全般</h3>
+
+<ul>
+<li>基本的に、設定はcompanion filesのものをベースにする. 2.1を動かしていた際の設定もあったが、大分変わっているようなので一旦companion filesのをまるごと持ってきた</li>
+<li>インストールのベースが<code>/usr/hdp/2.2.0.0-2041/</code>になっているが、実際のスクリプトの中では<code>/usr/lib/hadoop</code>等を参照しているものもあるため、<code>/usr/hdp/2.2.0.0-2041/hadoop -&gt; /usr/hdp/2.2.0.0-2041/hadoop</code> 等のようなシンボリックリンクをひと通り作成した.</li>
+<li>Daemonの起動スクリプト類は<code>hadoop-hdfs-namenode</code>等のような別RPMになっている.これらのインストール先は<code>/usr/hdp/2.2.0.0-2041/etc/</code>となっているため、<code>/etc/init.d</code>の下などに、こちらもシンボリックリンクを作成した. ちなみに、<code>/etc/default</code>の下に置くファイルも用意されているが、initスクリプトをみてもこれらを読むようには見えない.</li>
+<li>マニュアルにはcompanion filesに含まれる、 <code>usersAndGroups.sh</code>, <code>directories.sh</code> を設定した上で <code>~/.bash_profile</code>でこれらのファイルを読む設定を入れるようにあるが、daemonの動作がbash_profileに依存するのが気持ち悪かったので、それはやってない. それに起因したトラブルもあるかも.</li>
+</ul>
+
+
+<h3>Zookeeperのセットアップ</h3>
+
+<ul>
+<li>initスクリプト内で呼ばれる、<code>zookeeper-server</code>,<code>zookeeper-server-initialize</code>は<code>/usr/hdp/2.2.0.0-2041/zookeeper/bin/</code>にあるので、これらを<code>/usr/bin</code>下に置くよう、シンボリックリンクを作成した</li>
+</ul>
+
+
+<h3>service <hadoop daemon> start の戻り値が3</h3>
+
+<p>また、停止に失敗したりする.</p>
+
+<p>以下の様な感じ.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># service hadoop-yarn-resourcemanager start
+</span><span class='line'>Starting Hadoop resourcemanager:                           [  OK  ]
+</span><span class='line'>starting resourcemanager, logging to /var/log/hadoop/yarn/yarn-yarn-resourcemanager-hdp15.hadoop.local.out
+</span><span class='line'>[root@hdp15 init.d]# echo $?
+</span><span class='line'>3</span></code></pre></td></tr></table></div></figure>
+
+
+<p>initスクリプト内で以下のようにPIDFILEを設定しているが、環境変数が正しく設定されていないと、PIDFILEがうまく作られずにこのような状態になる.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>PIDFILE="$HADOOP_PID_DIR/yarn-$YARN_IDENT_STRING-resourcemanager.pid"</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>yarn-env.sh</code>で<code>HADOOP_PID_DIR</code>, <code>YARN_IDENT_STRING</code>, <code>hadoop-env.sh</code>でも<code>HADOOP_PID_DIR</code>を設定するようにした.</p>
+
+<h3>HistoryServerでPermission Deninedが発生</h3>
+
+<p>以下の様なエラーが発生. (何をしようとして発生したのか忘れた&hellip;)</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2014-12-27 03:15:05,824 ERROR hs.HistoryFileManager (HistoryFileManager.java:scanIfNeeded(285)) - Error while trying to scan the directory hdfs://hdpexperiment:
+</span><span class='line'>8020/mr-history/tmp/client
+</span><span class='line'>org.apache.hadoop.security.AccessControlException: Permission denied: user=mapred, access=READ_EXECUTE, inode="/mr-history/tmp/client":client:hdfs:drwxrwx---
+</span><span class='line'>        at org.apache.hadoop.hdfs.server.namenode.FSPermissionChecker.checkFsPermission(FSPermissionChecker.java:271)
+</span><span class='line'>        at org.apache.hadoop.hdfs.server.namenode.FSPermissionChecker.check(FSPermissionChecker.java:257)
+</span><span class='line'>        at org.apache.hadoop.hdfs.server.namenode.FSPermissionChecker.checkPermission(FSPermissionChecker.java:185)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>HDFSのパーミッションを見ると以下のようになっており、<code>/mr-history/tmp/client</code>に対して<code>mapred</code>ユーザのパーミッションが無い.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># sudo -u hdfs hdfs dfs -ls /
+</span><span class='line'>Found 6 items
+</span><span class='line'>drwxrwxrwt   - yarn   yarn            0 2014-12-27 03:11 /app-logs
+</span><span class='line'>drwxr-xr-x   - hdfs   hdfs            0 2014-12-27 02:43 /apps
+</span><span class='line'>drwxr-xr-x   - hdfs   hadoop          0 2014-12-26 16:17 /hdp
+</span><span class='line'>drwxr-xr-x   - mapred hdfs            0 2014-12-26 16:16 /mr-history
+</span><span class='line'>drwxrwxrwt   - hdfs   hdfs            0 2014-12-27 03:11 /tmp
+</span><span class='line'>drwxr-xr-x   - hdfs   hdfs            0 2014-12-27 02:33 /user
+</span><span class='line'># sudo -u hdfs hdfs dfs -ls /mr-history
+</span><span class='line'>Found 2 items
+</span><span class='line'>drwxrwxrwt   - mapred hdfs          0 2014-12-26 16:16 /mr-history/done
+</span><span class='line'>drwxrwxrwt   - mapred hdfs          0 2014-12-26 23:27 /mr-history/tmp
+</span><span class='line'># sudo -u hdfs hdfs dfs -ls /mr-history/tmp
+</span><span class='line'>Found 1 items
+</span><span class='line'>drwxrwx---   - client hdfs          0 2014-12-27 00:14 /mr-history/tmp/client
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>以下のように、<code>/mr-history</code>以下のgroupを<code>mapredと</code>することで対応.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># sudo -u hdfs hdfs dfs -chgrp -R mapred /mr-history</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>MapReduceジョブ実行中のエラー. Slaveにつながらない</h3>
+
+<p>exampleのpiを実行した際のエラー</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+<span class='line-number'>39</span>
+<span class='line-number'>40</span>
+<span class='line-number'>41</span>
+<span class='line-number'>42</span>
+<span class='line-number'>43</span>
+<span class='line-number'>44</span>
+<span class='line-number'>45</span>
+<span class='line-number'>46</span>
+<span class='line-number'>47</span>
+<span class='line-number'>48</span>
+<span class='line-number'>49</span>
+<span class='line-number'>50</span>
+<span class='line-number'>51</span>
+<span class='line-number'>52</span>
+<span class='line-number'>53</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>14/12/30 11:17:59 INFO ipc.Client: Retrying connect to server: hdp18.hadoop.local/10.29.254.69:39110. Already tried 0 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+</span><span class='line'>14/12/30 11:18:00 INFO ipc.Client: Retrying connect to server: hdp18.hadoop.local/10.29.254.69:39110. Already tried 1 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+</span><span class='line'>14/12/30 11:18:01 INFO ipc.Client: Retrying connect to server: hdp18.hadoop.local/10.29.254.69:39110. Already tried 2 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+</span><span class='line'>14/12/30 11:18:29 INFO ipc.Client: Retrying connect to server: hdp17.hadoop.local/10.29.254.67:43296. Already tried 0 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+</span><span class='line'>14/12/30 11:18:30 INFO ipc.Client: Retrying connect to server: hdp17.hadoop.local/10.29.254.67:43296. Already tried 1 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+</span><span class='line'>14/12/30 11:18:31 INFO ipc.Client: Retrying connect to server: hdp17.hadoop.local/10.29.254.67:43296. Already tried 2 time(s); retry policy is RetryUpToMaximumCountWithFixedSleep(maxRetries=3, sleepTime=1000 MILLISECONDS)
+</span><span class='line'>14/12/30 11:18:31 INFO mapreduce.Job: Job job_1419895534181_0002 failed with state FAILED due to: Application application_1419895534181_0002 failed 2 times due to AM Container for appattempt_1419895534181_0002_000002 exited with  exitCode: 255
+</span><span class='line'>For more detailed output, check application tracking page:http://hdp16.hadoop.local:8088/proxy/application_1419895534181_0002/Then, click on links to logs of each attempt.
+</span><span class='line'>Diagnostics: Exception from container-launch.
+</span><span class='line'>Container id: container_1419895534181_0002_02_000001
+</span><span class='line'>Exit code: 255
+</span><span class='line'>Stack trace: ExitCodeException exitCode=255: 
+</span><span class='line'>        at org.apache.hadoop.util.Shell.runCommand(Shell.java:538)
+</span><span class='line'>        at org.apache.hadoop.util.Shell.run(Shell.java:455)
+</span><span class='line'>        at org.apache.hadoop.util.Shell$ShellCommandExecutor.execute(Shell.java:715)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.nodemanager.DefaultContainerExecutor.launchContainer(DefaultContainerExecutor.java:211)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainerLaunch.call(ContainerLaunch.java:302)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainerLaunch.call(ContainerLaunch.java:82)
+</span><span class='line'>        at java.util.concurrent.FutureTask.run(FutureTask.java:262)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+</span><span class='line'>        at java.lang.Thread.run(Thread.java:745)
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>Container exited with a non-zero exit code 255
+</span><span class='line'>Failing this attempt. Failing the application.
+</span><span class='line'>14/12/30 11:18:31 INFO mapreduce.Job: Counters: 0
+</span><span class='line'>Job Finished in 99.802 seconds
+</span><span class='line'>java.io.FileNotFoundException: File does not exist: hdfs://hdpexperiment/user/hdfs/QuasiMonteCarlo_1419905807487_296085847/out/reduce-out
+</span><span class='line'>        at org.apache.hadoop.hdfs.DistributedFileSystem$18.doCall(DistributedFileSystem.java:1122)
+</span><span class='line'>        at org.apache.hadoop.hdfs.DistributedFileSystem$18.doCall(DistributedFileSystem.java:1114)
+</span><span class='line'>        at org.apache.hadoop.fs.FileSystemLinkResolver.resolve(FileSystemLinkResolver.java:81)
+</span><span class='line'>        at org.apache.hadoop.hdfs.DistributedFileSystem.getFileStatus(DistributedFileSystem.java:1114)
+</span><span class='line'>        at org.apache.hadoop.io.SequenceFile$Reader.&lt;init&gt;(SequenceFile.java:1750)
+</span><span class='line'>        at org.apache.hadoop.io.SequenceFile$Reader.&lt;init&gt;(SequenceFile.java:1774)
+</span><span class='line'>        at org.apache.hadoop.examples.QuasiMonteCarlo.estimatePi(QuasiMonteCarlo.java:314)
+</span><span class='line'>        at org.apache.hadoop.examples.QuasiMonteCarlo.run(QuasiMonteCarlo.java:354)
+</span><span class='line'>        at org.apache.hadoop.util.ToolRunner.run(ToolRunner.java:70)
+</span><span class='line'>        at org.apache.hadoop.examples.QuasiMonteCarlo.main(QuasiMonteCarlo.java:363)
+</span><span class='line'>        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+</span><span class='line'>        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+</span><span class='line'>        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+</span><span class='line'>        at java.lang.reflect.Method.invoke(Method.java:606)
+</span><span class='line'>        at org.apache.hadoop.util.ProgramDriver$ProgramDescription.invoke(ProgramDriver.java:71)
+</span><span class='line'>        at org.apache.hadoop.util.ProgramDriver.run(ProgramDriver.java:144)
+</span><span class='line'>        at org.apache.hadoop.examples.ExampleDriver.main(ExampleDriver.java:74)
+</span><span class='line'>        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+</span><span class='line'>        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+</span><span class='line'>        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+</span><span class='line'>        at java.lang.reflect.Method.invoke(Method.java:606)
+</span><span class='line'>        at org.apache.hadoop.util.RunJar.run(RunJar.java:221)
+</span><span class='line'>        at org.apache.hadoop.util.RunJar.main(RunJar.java:136)
+</span><span class='line'>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>yarn logs</code>ではログが見えなかったので、実行中のサーバでコンテナのログを見てみた. <code>${hdp.version}</code>というのがそのままになっている.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2014-12-30 13:08:49,568 FATAL [AsyncDispatcher event handler] org.apache.hadoop.yarn.event.AsyncDispatcher: Error in dispatcher thread
+</span><span class='line'>java.lang.IllegalArgumentException: Unable to parse '/hdp/apps/${hdp.version}/mapreduce/mapreduce.tar.gz#mr-framework' as a URI, check the setting for mapreduce.application.framework.path
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.util.MRApps.getMRFrameworkName(MRApps.java:178)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.util.MRApps.setMRFrameworkClasspath(MRApps.java:203)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.util.MRApps.setClasspath(MRApps.java:248)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl.getInitialClasspath(TaskAttemptImpl.java:620)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl.createCommonContainerLaunchContext(TaskAttemptImpl.java:755)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl.createContainerLaunchContext(TaskAttemptImpl.java:812)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl$ContainerAssignedTransition.transition(TaskAttemptImpl.java:1527)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl$ContainerAssignedTransition.transition(TaskAttemptImpl.java:1504)
+</span><span class='line'>        at org.apache.hadoop.yarn.state.StateMachineFactory$SingleInternalArc.doTransition(StateMachineFactory.java:362)
+</span><span class='line'>        at org.apache.hadoop.yarn.state.StateMachineFactory.doTransition(StateMachineFactory.java:302)
+</span><span class='line'>        at org.apache.hadoop.yarn.state.StateMachineFactory.access$300(StateMachineFactory.java:46)
+</span><span class='line'>        at org.apache.hadoop.yarn.state.StateMachineFactory$InternalStateMachine.doTransition(StateMachineFactory.java:448)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl.handle(TaskAttemptImpl.java:1069)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.job.impl.TaskAttemptImpl.handle(TaskAttemptImpl.java:145)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.MRAppMaster$TaskAttemptEventDispatcher.handle(MRAppMaster.java:1311)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.app.MRAppMaster$TaskAttemptEventDispatcher.handle(MRAppMaster.java:1303)
+</span><span class='line'>        at org.apache.hadoop.yarn.event.AsyncDispatcher.dispatch(AsyncDispatcher.java:173)
+</span><span class='line'>        at org.apache.hadoop.yarn.event.AsyncDispatcher$1.run(AsyncDispatcher.java:106)
+</span><span class='line'>        at java.lang.Thread.run(Thread.java:745)
+</span><span class='line'>Caused by: java.net.URISyntaxException: Illegal character in path at index 11: /hdp/apps/${hdp.version}/mapreduce/mapreduce.tar.gz#mr-framework
+</span><span class='line'>        at java.net.URI$Parser.fail(URI.java:2829)
+</span><span class='line'>        at java.net.URI$Parser.checkChars(URI.java:3002)
+</span><span class='line'>        at java.net.URI$Parser.parseHierarchical(URI.java:3086)
+</span><span class='line'>        at java.net.URI$Parser.parse(URI.java:3044)
+</span><span class='line'>        at java.net.URI.&lt;init&gt;(URI.java:595)
+</span><span class='line'>        at org.apache.hadoop.mapreduce.v2.util.MRApps.getMRFrameworkName(MRApps.java:176)
+</span><span class='line'>        ... 18 more
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>mapred-site.xml</code>で、<code>${hdp.version}</code>となっている部分を実際のバージョン番号(<code>2.2.0.0-2041</code>)に変えたら解消した.</p>
+
+<h3>Journalnodeの停止に失敗</h3>
+
+<p>journalnodeを停止すると、<code>no journalnode to stop</code>というエラーが発生. ただ、プロセスは停止している.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># service hadoop-hdfs-journalnode stop
+</span><span class='line'>Stopping Hadoop journalnode:                               [  OK  ]
+</span><span class='line'>no journalnode to stop
+</span><span class='line'>rm: cannot remove `/var/run/hadoop/hadoop-hdfs-journalnode.pid': Permission denied
+</span><span class='line'># ls -l /var/run/hadoop/hadoop-hdfs-journalnode.pid
+</span><span class='line'>-rw-r--r-- 1 hdfs hdfs 6 12月 30 08:24 2014 /var/run/hadoop/hadoop-hdfs-journalnode.pid
+</span><span class='line'># ps -ef | grep -i journal
+</span><span class='line'>root       374     2  0 Dec29 ?        00:00:02 [kjournald]
+</span><span class='line'>root       811     2  0 Dec29 ?        00:00:00 [kjournald]
+</span><span class='line'>root     14406 14342  0 14:15 pts/0    00:00:00 grep -i journal</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ディレクトリのowner/groupが<code>mapred</code>になっている.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># ls -ld /var/run/hadoop
+</span><span class='line'>drwxr-xr-x 5 mapred mapred 4096 12月 30 14:16 2014 /var/run/hadoop</span></code></pre></td></tr></table></div></figure>
+
+
+<p>これを<code>hdfs.hdfs</code>にしたら事象は解消したが、HistoryServerをrestartしたら<code>/var/run/hadoop</code>のownerが<code>mapred.mapred</code>に戻ってしまった.</p>
+
+<p><code>hadoop-mapreduce-historyserver</code>のinitスクリプトにある、以下の部分のせい. つまり、historyserverとHDFS系のdaemonが同居している場合に発生する問題.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>install -d -m 0755 -o mapred -g mapred $HADOOP_PID_DIR 1&gt;/dev/null 2&gt;&1 || :
+</span><span class='line'>[ -d "$LOCKDIR" ] || install -d -m 0755 $LOCKDIR 1&gt;/dev/null 2&gt;&1 || :
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><code>hadoop-env.sh</code>に以下の記述を入れ、HistoryServerの<code>HADOOP_PID_DIR</code>をHDFS系と分けることで対応することにした.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># For HistoryServer
+</span><span class='line'>if [ "${SVC_USER}" = "mapred" ]; then
+</span><span class='line'>  HADOOP_PID_DIR=/var/run/hadoop-mapreduce
+</span><span class='line'>fi
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>Hive CREATE TABLE時のNo privilege</h3>
+
+<p>beelineからhiveユーザで接続し、create tableを発行した際のエラー</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>0: jdbc:hive2://hdp16.hadoop.local:10000&gt; create table test2(a int, b string); 
+</span><span class='line'>Error: Error while compiling statement: FAILED: SemanticException MetaException(message:No privilege 'Select' found for inputs { database:default}) (state=42000,code=40000)</span></code></pre></td></tr></table></div></figure>
+
+
+<p><a href="https://cwiki.apache.org/confluence/display/Hive/Storage+Based+Authorization+in+the+Metastore+Server">Storage Based Authorization in the Metastore Server</a>に引っかかっている模様</p>
+
+<p>一旦以下の設定を外して対応</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  &lt;property&gt;
+</span><span class='line'>    &lt;name&gt;hive.metastore.pre.event.listeners&lt;/name&gt;
+</span><span class='line'>    &lt;value&gt;org.apache.hadoop.hive.ql.security.authorization.AuthorizationPreEventListener&lt;/value&gt;
+</span><span class='line'>    &lt;description&gt;List of comma separated listeners for metastore events.&lt;/description&gt;
+</span><span class='line'>  &lt;/property&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>Hive on MRでのクエリ実行エラー</h3>
+
+<p>HiveServer2のログには以下のメッセージが出ている.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2015-01-06 03:14:42,300 ERROR [HiveServer2-Background-Pool: Thread-65]: exec.Task (SessionState.java:printError(833)) - Ended Job = job_1420474977406_0003 with
+</span><span class='line'>exception 'java.lang.NumberFormatException(For input string: "100000L")'
+</span><span class='line'>java.lang.NumberFormatException: For input string: "100000L"
+</span><span class='line'>        at java.lang.NumberFormatException.forInputString(NumberFormatException.java:65)
+</span><span class='line'>        at java.lang.Long.parseLong(Long.java:441)
+</span><span class='line'>        at java.lang.Long.parseLong(Long.java:483)
+</span><span class='line'>        at org.apache.hadoop.conf.Configuration.getLong(Configuration.java:1189)
+</span><span class='line'>        at org.apache.hadoop.hive.conf.HiveConf.getLongVar(HiveConf.java:2253)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.mr.HadoopJobExecHelper.checkFatalErrors(HadoopJobExecHelper.java:209)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.mr.HadoopJobExecHelper.progress(HadoopJobExecHelper.java:308)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.mr.HadoopJobExecHelper.progress(HadoopJobExecHelper.java:547)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.mr.ExecDriver.execute(ExecDriver.java:435)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.mr.MapRedTask.execute(MapRedTask.java:137)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.Task.executeTask(Task.java:160)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.TaskRunner.runSequential(TaskRunner.java:85)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.Driver.launchTask(Driver.java:1604)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.Driver.execute(Driver.java:1364)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.Driver.runInternal(Driver.java:1177)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.Driver.run(Driver.java:1004)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.Driver.run(Driver.java:999)
+</span><span class='line'>        at org.apache.hive.service.cli.operation.SQLOperation.runQuery(SQLOperation.java:144)
+</span><span class='line'>        at org.apache.hive.service.cli.operation.SQLOperation.access$100(SQLOperation.java:69)
+</span><span class='line'>        at org.apache.hive.service.cli.operation.SQLOperation$1$1.run(SQLOperation.java:196)
+</span><span class='line'>        at java.security.AccessController.doPrivileged(Native Method)
+</span><span class='line'>        at javax.security.auth.Subject.doAs(Subject.java:415)
+</span><span class='line'>        at org.apache.hadoop.security.UserGroupInformation.doAs(UserGroupInformation.java:1628)
+</span><span class='line'>        at org.apache.hadoop.hive.shims.HadoopShimsSecure.doAs(HadoopShimsSecure.java:536)
+</span><span class='line'>        at org.apache.hive.service.cli.operation.SQLOperation$1.run(SQLOperation.java:208)
+</span><span class='line'>        at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:471)
+</span><span class='line'>        at java.util.concurrent.FutureTask.run(FutureTask.java:262)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+</span><span class='line'>        at java.lang.Thread.run(Thread.java:745)
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p><a href="https://issues.apache.org/jira/browse/AMBARI-8219">AMBARI-8219</a>
+の事例に従い、hive-site.xmlの以下を変更したらOK</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>   &lt;property&gt;
+</span><span class='line'>     &lt;name&gt;hive.exec.max.created.files&lt;/name&gt;
+</span><span class='line'>-    &lt;value&gt;100000L&lt;/value&gt;
+</span><span class='line'>+    &lt;value&gt;100000&lt;/value&gt;
+</span><span class='line'>     &lt;description&gt;Maximum number of HDFS files created by all mappers/reducers in a MapReduce job.&lt;/description&gt;
+</span><span class='line'>   &lt;/property&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>hive.execution.engine=tez でのHiveクエリ実行エラー1</h3>
+
+<p>HiveServer2のログは以下の通り</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>5841 end=1419741946024 duration=183 from=org.apache.hadoop.hive.ql.Driver&gt;
+</span><span class='line'>2014-12-28 13:45:46,025 ERROR [HiveServer2-Handler-Pool: Thread-56]: thrift.ProcessFunction (ProcessFunction.java:process(41)) - Internal error processing ExecuteStatement
+</span><span class='line'>java.lang.NoClassDefFoundError: org/apache/tez/dag/api/SessionNotRunning
+</span><span class='line'>        at java.lang.Class.getDeclaredConstructors0(Native Method)
+</span><span class='line'>        at java.lang.Class.privateGetDeclaredConstructors(Class.java:2585)
+</span><span class='line'>        at java.lang.Class.getConstructor0(Class.java:2885)
+</span><span class='line'>        at java.lang.Class.newInstance(Class.java:350)
+</span><span class='line'>        at org.apache.hadoop.hive.ql.exec.TaskFactory.get(TaskFactory.java:133)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>このクラスはtez-apiのjarに含まれているが、HiveServer2のサーバにTezクライアントをセットアップしていなかったのが原因だった. セットアップして解消.</p>
+
+<h3>Tez OrderedWordCountの実行エラー</h3>
+
+<p>Tezの動作確認として、tez-examplesに含まれる、OrderedWordCountを実行した際のエラー.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+<span class='line-number'>30</span>
+<span class='line-number'>31</span>
+<span class='line-number'>32</span>
+<span class='line-number'>33</span>
+<span class='line-number'>34</span>
+<span class='line-number'>35</span>
+<span class='line-number'>36</span>
+<span class='line-number'>37</span>
+<span class='line-number'>38</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># su - hdfs
+</span><span class='line'>-bash-4.1$ cat /tmp/test.txt 
+</span><span class='line'>foo bar foo bar foo
+</span><span class='line'>$ hadoop fs -put /tmp/test.txt /tmp/test.txt 
+</span><span class='line'>-bash-4.1$ hadoop jar /usr/hdp/2.2.0.0-2041/tez/tez-examples-0.5.2.2.2.0.0-2041.jar orderedwordcount /tmp/test.txt /tmp/out
+</span><span class='line'>Running OrderedWordCount
+</span><span class='line'>14/12/27 02:54:57 INFO client.TezClient: Tez Client Version: [ component=tez-api, version=0.5.2.2.2.0.0-2041, revision=db32ad437885baf17ab90885b4ddb226fbbe3559, SCM-URL=scm:git:https://git-wip-us.apache.org/repos/asf/tez.git, buildTIme=20141119-1512 ]
+</span><span class='line'>14/12/27 02:54:59 INFO client.TezClient: Submitting DAG application with id: application_1419606523103_0010
+</span><span class='line'>14/12/27 02:54:59 INFO Configuration.deprecation: fs.default.name is deprecated. Instead, use fs.defaultFS
+</span><span class='line'>14/12/27 02:54:59 INFO client.TezClientUtils: Using tez.lib.uris value from configuration: hdfs://hdpexperiment/apps/tez/,hdfs://hdpexperiment/apps/tez/lib/,hdfs://hdpexperiment/hdp/apps/current/tez/tez.tar.gz
+</span><span class='line'>14/12/27 02:54:59 WARN client.TezClientUtils: Duplicate resource found, resourceName=tez.tar.gz, existingPath=scheme: "hdfs" host: "hdpexperiment" port: -1 file: "/apps/tez/lib/tez.tar.gz", newPath=hdfs://hdpexperiment/hdp/apps/current/tez/tez.tar.gz
+</span><span class='line'>14/12/27 02:54:59 INFO client.TezClient: Tez system stage directory hdfs://hdpexperiment/tmp/hdfs/staging/.tez/application_1419606523103_0010 doesn't exist and is created
+</span><span class='line'>14/12/27 02:55:00 INFO client.TezClient: Submitting DAG to YARN, applicationId=application_1419606523103_0010, dagName=OrderedWordCount
+</span><span class='line'>14/12/27 02:55:01 INFO impl.YarnClientImpl: Submitted application application_1419606523103_0010
+</span><span class='line'>14/12/27 02:55:01 INFO client.TezClient: The url to track the Tez AM: http://hdp16.hadoop.local:8088/proxy/application_1419606523103_0010/
+</span><span class='line'>14/12/27 02:55:01 INFO client.DAGClientImpl: Waiting for DAG to start running
+</span><span class='line'>14/12/27 02:55:13 INFO client.DAGClientImpl: DAG completed. FinalState=FAILED
+</span><span class='line'>OrderedWordCount failed with diagnostics: [Application application_1419606523103_0010 failed 2 times due to AM Container for appattempt_1419606523103_0010_000002 exited with  exitCode: 1
+</span><span class='line'>For more detailed output, check application tracking page:http://hdp16.hadoop.local:8088/proxy/application_1419606523103_0010/Then, click on links to logs of each attempt.
+</span><span class='line'>Diagnostics: Exception from container-launch.
+</span><span class='line'>Container id: container_1419606523103_0010_02_000001
+</span><span class='line'>Exit code: 1
+</span><span class='line'>Stack trace: ExitCodeException exitCode=1:
+</span><span class='line'>        at org.apache.hadoop.util.Shell.runCommand(Shell.java:538)
+</span><span class='line'>        at org.apache.hadoop.util.Shell.run(Shell.java:455)
+</span><span class='line'>        at org.apache.hadoop.util.Shell$ShellCommandExecutor.execute(Shell.java:715)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.nodemanager.DefaultContainerExecutor.launchContainer(DefaultContainerExecutor.java:211)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainerLaunch.call(ContainerLaunch.java:302)
+</span><span class='line'>        at org.apache.hadoop.yarn.server.nodemanager.containermanager.launcher.ContainerLaunch.call(ContainerLaunch.java:82)
+</span><span class='line'>        at java.util.concurrent.FutureTask.run(FutureTask.java:262)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+</span><span class='line'>        at java.lang.Thread.run(Thread.java:745)
+</span><span class='line'>
+</span><span class='line'>
+</span><span class='line'>Container exited with a non-zero exit code 1
+</span><span class='line'>Failing this attempt. Failing the application.]
+</span><span class='line'>
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>コンテナのログを見ると以下の通り. クラスが見つからない.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+<span class='line-number'>21</span>
+<span class='line-number'>22</span>
+<span class='line-number'>23</span>
+<span class='line-number'>24</span>
+<span class='line-number'>25</span>
+<span class='line-number'>26</span>
+<span class='line-number'>27</span>
+<span class='line-number'>28</span>
+<span class='line-number'>29</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>Container: container_1419606523103_0009_01_000001 on hdp17.hadoop.local_45454
+</span><span class='line'>===============================================================================
+</span><span class='line'>LogType:stderr
+</span><span class='line'>Log Upload Time:27-12-2014 03:37:52
+</span><span class='line'>LogLength:1445
+</span><span class='line'>Log Contents:
+</span><span class='line'>Exception in thread "main" java.lang.NoClassDefFoundError: org/apache/hadoop/service/AbstractService
+</span><span class='line'>        at java.lang.ClassLoader.defineClass1(Native Method)
+</span><span class='line'>        at java.lang.ClassLoader.defineClass(ClassLoader.java:800)
+</span><span class='line'>        at java.security.SecureClassLoader.defineClass(SecureClassLoader.java:142)
+</span><span class='line'>        at java.net.URLClassLoader.defineClass(URLClassLoader.java:449)
+</span><span class='line'>        at java.net.URLClassLoader.access$100(URLClassLoader.java:71)
+</span><span class='line'>        at java.net.URLClassLoader$1.run(URLClassLoader.java:361)
+</span><span class='line'>        at java.net.URLClassLoader$1.run(URLClassLoader.java:355)
+</span><span class='line'>        at java.security.AccessController.doPrivileged(Native Method)
+</span><span class='line'>        at java.net.URLClassLoader.findClass(URLClassLoader.java:354)
+</span><span class='line'>        at java.lang.ClassLoader.loadClass(ClassLoader.java:425)
+</span><span class='line'>        at sun.misc.Launcher$AppClassLoader.loadClass(Launcher.java:308)
+</span><span class='line'>        at java.lang.ClassLoader.loadClass(ClassLoader.java:358)
+</span><span class='line'>        at sun.launcher.LauncherHelper.checkAndLoadMain(LauncherHelper.java:482)
+</span><span class='line'>Caused by: java.lang.ClassNotFoundException: org.apache.hadoop.service.AbstractService
+</span><span class='line'>        at java.net.URLClassLoader$1.run(URLClassLoader.java:366)
+</span><span class='line'>        at java.net.URLClassLoader$1.run(URLClassLoader.java:355)
+</span><span class='line'>        at java.security.AccessController.doPrivileged(Native Method)
+</span><span class='line'>        at java.net.URLClassLoader.findClass(URLClassLoader.java:354)
+</span><span class='line'>        at java.lang.ClassLoader.loadClass(ClassLoader.java:425)
+</span><span class='line'>        at sun.misc.Launcher$AppClassLoader.loadClass(Launcher.java:308)
+</span><span class='line'>        at java.lang.ClassLoader.loadClass(ClassLoader.java:358)
+</span><span class='line'>        ... 13 more
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>このクラスは、hadoop-common.jarに入っており、<code>yarn classpath</code>で確認するとこのjarもCLASSPATHに含まれているのだが、、、</p>
+
+<p>(1/9追記)どうやら、<code>tez.lib.uris</code>の問題だった模様.以下のように、HDFSに乗せた<code>tez.tar.gz</code>のパスを指定したらうまく動作した.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;property&gt;
+</span><span class='line'>  &lt;name&gt;tez.lib.uris&lt;/name&gt;
+</span><span class='line'>  &lt;value&gt;/hdp/apps/current/tez/tez.tar.gz&lt;/value&gt;
+</span><span class='line'>&lt;/property&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>まとめ</h2>
+
+<p>ということで、HDP2.2のクラスタを作ろうとして色々うまくいかなかったのでまとめてみた. <del>あとはTezのエラーを解消したいなぁ.</del> あと、マニュアルをブラウザで見るととても見づらいので、PDFをダウンロードして手元で見た方が良い.</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/12/16/try-fluentd-v0-dot-12-at-least-once/">Fluentd v0.12のAt-least-once Semanticsを試す</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-12-16T00:34:17+09:00" pubdate data-updated="true">Dec 16<span>th</span>, 2014</time>
+        
+           | <a href="/blog/2014/12/16/try-fluentd-v0-dot-12-at-least-once/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2014/12/16/try-fluentd-v0-dot-12-at-least-once/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>Fluentd v0.12のin/out_forwardでAt-least-once semanticsがサポートされるようになった. 今まではアプリケーションレイヤでの到達確認がなかったので、一部のネットワーク障害などのケースでは、送信されたように見えて実は送信されていない、という事象が発生し得た. v0.12から導入された<code>require_ack_response</code>オプションを使うと、このような事象を避けることができる.</p>
+
+<p>この機能が導入されたpull requestはこちら.
+<a href="https://github.com/fluent/fluentd/pull/428">https://github.com/fluent/fluentd/pull/428</a></p>
+
+<p>ということで試してみた.</p>
+
+<h2>require_ack_responseがない場合</h2>
+
+<p>fluentd 0.10.56で試す. (0.12で試しても良かったのだけど..)</p>
+
+<p>送信側は以下の設定. 相手先fluentdが早々にdetachされてしまうのを避けるため、<code>hard_timeout</code>と<code>phi_threshold</code>を入れた</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;source&gt;
+</span><span class='line'>   type forward
+</span><span class='line'>&lt;/source&gt;
+</span><span class='line'>&lt;match test.**&gt;
+</span><span class='line'>   type forward
+</span><span class='line'>   flush_interval 1s
+</span><span class='line'>   heartbeat_type tcp
+</span><span class='line'>   hard_timeout 600
+</span><span class='line'>   phi_threshold 300
+</span><span class='line'>   buffer_type file
+</span><span class='line'>   buffer_path /var/log/fluentd.*.buffer
+</span><span class='line'>   &lt;server&gt;
+</span><span class='line'>     host  192.168.1.2
+</span><span class='line'>     port 24224
+</span><span class='line'>   &lt;/server&gt;
+</span><span class='line'>&lt;/match&gt;
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>受信側はこんな感じ</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>&lt;source&gt;
+</span><span class='line'>  type forward
+</span><span class='line'>&lt;/source&gt;
+</span><span class='line'>
+</span><span class='line'>&lt;match test.**&gt;
+</span><span class='line'>  type file
+</span><span class='line'>  path /tmp/fluentd_forward.log
+</span><span class='line'>&lt;/match&gt;
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>で、パケットが届かないが、アプリケーションにエラーが返らない状況を作るため、受信側のiptablesでSYNが立っていないパケットをドロップするようにする. SYNは相手に到達し、SYN-ACKも返るため、アプリケーションからは正常に接続されている様に見えることになる.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># iptables -A INPUT -p tcp --syn --dport 24224 -j ACCEPT
+</span><span class='line'># iptables -A INPUT -p tcp --dport 24224 -j DROP</span></code></pre></td></tr></table></div></figure>
+
+
+<p>これでログを送ってみる</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># echo '{"aaa": 1}' | fluent-cat  test.data
+</span><span class='line'># echo '{"bbb": 2}' | fluent-cat test.data</span></code></pre></td></tr></table></div></figure>
+
+
+<p>netstatで送信側のソケットを見る. Send-Qにデータが溜まっている.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># netstat -na | grep 24224
+</span><span class='line'>tcp        0      0 0.0.0.0:24224               0.0.0.0:*                   LISTEN
+</span><span class='line'>tcp        0      1 192.168.1.1:10652          192.168.1.2:24224          FIN_WAIT1
+</span><span class='line'>tcp        0     41 192.168.1.1:10655          192.168.1.2:24224          FIN_WAIT1
+</span><span class='line'>udp        0      0 0.0.0.0:24224               0.0.0.0:*
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>しばらくすると、ソケットが破棄される.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># netstat -na | grep 24224
+</span><span class='line'>tcp        0      0 0.0.0.0:24224               0.0.0.0:*                   LISTEN      
+</span><span class='line'>tcp        0      1 192.168.1.1:10664           192.168.1.2:24224          FIN_WAIT1   
+</span><span class='line'>udp        0      0 0.0.0.0:24224               0.0.0.0:*             
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>この状況だと、アプリケーション的には正常に送れているように見えてしまうので、バッファは削除される. つまりログがロストした状況.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># ls /var/log/fluentd.*.buffer
+</span><span class='line'>ls: cannot access /var/log/fluentd.*.buffer: そのようなファイルやディレクトリはありません
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>require_ack_responseを使う</h2>
+
+<p>次に、送受信共に<code>v0.12.1</code>にして、送信側に<code>require_ack_response</code>の設定を入れてみる.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  &lt;source&gt;
+</span><span class='line'>    type forward
+</span><span class='line'>  &lt;/source&gt;
+</span><span class='line'>  &lt;match test.**&gt;
+</span><span class='line'>    type forward
+</span><span class='line'>    flush_interval 1s
+</span><span class='line'>    heartbeat_type tcp
+</span><span class='line'>    hard_timeout 600
+</span><span class='line'>    phi_threshold 300
+</span><span class='line'>    buffer_type file
+</span><span class='line'>    buffer_path /var/log/fluentd.*.buffer
+</span><span class='line'>    require_ack_response 
+</span><span class='line'>    &lt;server&gt;
+</span><span class='line'>      host 192.168.1.2
+</span><span class='line'>      port 24224
+</span><span class='line'>    &lt;/server&gt;
+</span><span class='line'>  &lt;/match&gt;
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>同様にfluent-catで送る. 今度は、一定時間後に以下のようにエラーになった.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2014-12-15 15:25:56 +0900 [warn]: no response from 192.168.1.2:24224. regard it as unavailable.
+</span><span class='line'>2014-12-15 15:26:56 +0900 [warn]: temporarily failed to flush the buffer. next_retry=2014-12-15 15:22:46 +0900 error_class="Fluent::ForwardOutputACKTimeoutError" error="node 10.29.254.66:24224 does not return ACK" plugin_id="object:16c7e3c"
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:321:in `send_data'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:169:in `block in write_objects'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:163:in `times'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/plugin/out_forward.rb:163:in `write_objects'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/output.rb:459:in `write'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/buffer.rb:325:in `write_chunk'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/buffer.rb:304:in `pop'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/output.rb:320:in `try_flush'
+</span><span class='line'>  2014-12-15 15:26:56 +0900 [warn]: /usr/local/rvm/gems/ruby-2.1.5/gems/fluentd-0.12.1/lib/fluent/output.rb:140:in `run'
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>バッファも残っている</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'># ls /var/log/fluentd.test.data.*.buffer
+</span><span class='line'>/var/log/fluentd.test.data.b50a3b457dcfed028.buffer  /var/log/fluentd.test.data.q50a3b455b1eac4ca.buffer</span></code></pre></td></tr></table></div></figure>
+
+
+<p>しばらく放置した後、iptablesを解除したら無事に送信された.</p>
+
+<h2>まとめ</h2>
+
+<p>Fluentd v0.12で導入されたAt-least-once semanticsを試してみた. アプリケーションレイヤでの到達確認が実装されることで、TCPレイヤでパケットがうまく届いていないケースについても、fluentdがそれを検知して再送してくれることが確認できた.</p>
+
+<p>ちなみに自分のところでは、ruby1.9上でfluentdを動かしていた時にプロセスが短時間ブロックするような事象が多発していて、それに起因してログのロストが発生したことがある. 恐らく、上記のようにTCPのコネクションは確立したように見えて、実は相手側がハング状態だったためにソケットバッファに滞留、最終的にソケットクローズ時にパケットが破棄されたのだと考えている.
+(この時は、td-agent2にしたら解消した)</p>
+
+<p><code>require_ack_response</code>により、そのようなケースでもfluentdがちゃんと検知して再送してくれるので、このオプションは是非入れておきたい.</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/12/10/thinkings-to-start-using-docker1/">Dockerを使い始めるための検討</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-12-10T23:38:27+09:00" pubdate data-updated="true">Dec 10<span>th</span>, 2014</time>
+        
+           | <a href="/blog/2014/12/10/thinkings-to-start-using-docker1/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2014/12/10/thinkings-to-start-using-docker1/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>実環境でDockerを使い始めてみよう、と思うけど考えないといけないことが色々ありそう。どんなことを考える必要があるか、それぞれどうしていくのが良いか、考えてみる。</p>
+
+<h2>導入の目的</h2>
+
+<p>以下を目的にする。</p>
+
+<ul>
+<li>アプリケーションのポータビリティ
+
+<ul>
+<li>開発・テスト環境と同じイメージを本番でも利用することで、環境差異に起因するトラブルを減らす</li>
+<li>サーバが増えた際に、簡単に同じアプリケーション環境をセットアップできるようにする</li>
+</ul>
+</li>
+<li>リソースの分離
+
+<ul>
+<li>同じサーバに複数のアプリケーションが乗った際に、それぞれの環境やOSリソースを分離し、お互いに影響しないようにする</li>
+</ul>
+</li>
+</ul>
+
+
+<p>導入の対象は、まずはデータをストアしないjavaアプリケーションサーバとする.</p>
+
+<h2>考える事</h2>
+
+<p>いざ、使ってみようと思うと以下のような点が悩ましくなってきた。</p>
+
+<ul>
+<li>イメージを作る単位</li>
+<li>既存の構成管理ツール(Ansible)との連携</li>
+<li>ネットワークをどうする？外部からどう接続するか</li>
+<li>起動先の環境に依存する部分をどう吸収するか</li>
+</ul>
+
+
+<h2>考えてみる</h2>
+
+<p>さて、どうしようか</p>
+
+<h3>イメージを作る単位</h3>
+
+<p>イメージの差分管理ができる、とは言え何か変わる度に一直線に更新をしていくのもなんか違う気がする.</p>
+
+<p>以下のようにレイヤを分けて作るのが管理しやすいのでは、と考えた.</p>
+
+<ul>
+<li>baseイメージ
+
+<ul>
+<li>OSの基本パッケージと、構成管理ツールをインストールしたイメージ.</li>
+</ul>
+</li>
+<li>ミドルウェアイメージ
+
+<ul>
+<li>baseイメージを元にビルドする. アプリケーションデプロイの手前までの環境を提供する</li>
+<li>割と複雑になりそうなので、Dockerfile内からAnsible playbookを呼び出すことで実行する</li>
+</ul>
+</li>
+<li>アプリケーションイメージ
+
+<ul>
+<li>ミドルウェアイメージに対して、アプリケーションをデプロイして使える状態にしたイメージ</li>
+</ul>
+</li>
+</ul>
+
+
+<p>新しいアプリケーションをデプロイする際は、最新のミドルウェアイメージを利用して新しいアプリケーションイメージを作成する. もしミドルウェアの設定変更などが発生した場合は、ミドルウェアイメージを再作成し、それを元に再度アプリケーションイメージを作成する.</p>
+
+<p>それぞれのレイヤごとに更新の頻度も違うし、更新を入れる担当も違うのでこのように分けて、それぞれのレイヤでバージョンを管理していくのが良さそう.</p>
+
+<h3>既存の構成管理ツールとの連携</h3>
+
+<p>Ansible playbookの資産があるので、再利用したい. また、Dockerfileは基本コマンドを羅列するだけなので、ある程度複雑になってくると辛い. Dockerfileだけで環境を作ることもできるが、メンテナンス性や再利用性を考えると構成管理ツールは必要だと思う.</p>
+
+<p>そこで、DockerfileからAnsible playbookを実行して環境を構築することにする.</p>
+
+<p>通常ansible-playbookはSSH経由で実行するが、そのためにコンテナの中でsshdを上げるのも。。。と思ってたら、SSHを使わなくても実行できるらしい. <a href="http://docs.ansible.com/playbooks_delegation.html#local-playbooks">Local Playbooks</a></p>
+
+<p>playbookをDockerfile内でADDするか、VOLUMEに置くかしてコンテナから見えるようにすれば、コンテナに対するplaybookの適用はできそう.</p>
+
+<h3>ネットワークをどうする？</h3>
+
+<p>普通にコンテナを起動すると、Dockerホスト内のプライベートネットワーク空間に入るので、外部からどう接続するかを考える必要がある.</p>
+
+<p><a href="https://docs.docker.com/articles/networking/#container-networking">ドキュメント</a>によると、ネットワークのオプションもいくつかある.</p>
+
+<ul>
+<li><code>--net=bridge</code>(デフォルト)
+
+<ul>
+<li>Dockerホストが提供する仮想ブリッジに接続される. 外部にポートを公開するにはexposeする必要がある</li>
+</ul>
+</li>
+<li><code>--net=container</code>
+
+<ul>
+<li>起動済みコンテナのネットワークスタックを再利用する. ネットワークスタックを共用しているコンテナ同士は、localhostで通信できる. 外部から繋ぐには、やはりexposeが必要</li>
+</ul>
+</li>
+<li><code>--net=host</code>
+
+<ul>
+<li>ホストのネットワークスタックをそのまま利用する. 普通にホストの中にプロセスが起動しているのと同じ状態になる.</li>
+</ul>
+</li>
+</ul>
+
+
+<p><a href="http://domino.research.ibm.com/library/cyberdig.nsf/papers/0929052195DD819C85257D2300681E7B/$File/rc25482.pdf">IBMの検証結果</a>や、<a href="ISUCON%E3%81%A7Nginx%E3%81%A8MySQL%E3%82%92Docker%E5%8C%96%E3%81%97%E3%81%9F%E3%81%A8%E3%81%8D%E3%81%AE%E3%83%91%E3%83%95%E3%82%A9%E3%83%BC%E3%83%9E%E3%83%B3%E3%82%B9">こちら</a>によると、<code>--net=bridge</code>だとNATのオーバーヘッドにより<code>--net=host</code>に対して20%程度性能が落ちる場合があるらしい.</p>
+
+<p>ただ、<code>--net=host</code>だと同一ホストで複数コンテナ起動する場合にはポートがバッティングしないように何かしら工夫する必要がある. <code>--net=bridge</code>だと<code>docker run</code>するときにオプションでマッピングを変えればいいので、そっちの方が扱いやすいか. これは、とりあえず両方試してみて後で決める.</p>
+
+<p>外部からの接続方法については、<a href="https://github.com/googlecloudplatform/kubernetes">Kubernetes</a>とか、serf+HAProxy/nginxとか、カッコイイ方法はありそうだけど、とりあえずは手で接続元やHAProxy等の設定を変更することにする. 自動化は後.</p>
+
+<h3>起動先の環境に依存する部分をどう吸収するか</h3>
+
+<p>実行環境がコンテナ内に固められている、とは言えやはり環境に依存する部分はあり得る. アプリケーションサーバから接続する先のDBとか、ホストのメモリに応じてコンテナ内のjavaアプリケーションサーバのヒープサイズを変えたいとか、自ホストのIPアドレスが設定ファイルに書かれている場合とか.
+調べてみると、<code>docker run</code>に<code>-e</code>オプションを付けて環境変数を渡すことはできそう. すると、環境変数を元に関連する部分を書き換えた上でアプリケーションサーバを起動するようなラッパースクリプトを作り、Dockerfileの<code>CMD</code>でコンテナ起動時に実行するようにする必要がある.</p>
+
+<p>以下が参考になりそう</p>
+
+<ul>
+<li><a href="http://heartbeats.jp/hbblog/2014/07/3-tips-for-nginx-on-docker.html">nginxをdockerで動かす時のTips 3選</a></li>
+<li><a href="http://java.dzone.com/articles/parameterized-docker">Parameterized Docker Containers</a></li>
+</ul>
+
+
+<h2>他には？</h2>
+
+<p>ログをどうするとか、モニタリングとか、他にも色々考えることはありそうだけど、とりあえずここまで.</p>
+</div>
+  
+  
+
+
+    </article>
   
   
     <article>
@@ -849,30 +2232,30 @@
   <ul id="recent_posts">
     
       <li class="post">
+        <a href="/blog/2016/07/12/realtime-data-processing-at-facebook/">Realtime Data Processing at Facebookを読んで</a>
+      </li>
+    
+      <li class="post">
         <a href="/blog/2016/05/13/thoughts-on-apache-flink/">Apache Flinkを試してみての感想</a>
       </li>
     
       <li class="post">
-        <a href="/blog/2016/03/25/gree-tech-talk-10/">GREE Tech Talk 10に行ってきた</a>
+        <a href="/blog/2016/04/08/flink-state-management/">Apache Flinkのstate管理について</a>
       </li>
     
       <li class="post">
-        <a href="/blog/2016/02/26/trying-apache-flink/">Apache Flinkを試している</a>
+        <a href="/blog/2016/04/05/apache-flink-continuousprocessingtimetrigger/">Apache Flink ContinuousProcessingTimeTriggerの話</a>
       </li>
     
       <li class="post">
-        <a href="/blog/2016/02/08/hadoop-slash-spark-conference-2016/">Hadoop / Spark Conference Japan 2016 に行ってきた</a>
-      </li>
-    
-      <li class="post">
-        <a href="/blog/2015/03/24/code-reading-of-fluentd-v0-dot-12-filter-and-label-related/">FluentdのFilter&Label周りのコードを読んだメモ</a>
+        <a href="/blog/2016/04/05/apache-flink-performance/">Apache Flinkの性能 - デフォルトのJSONパーサが遅かった話</a>
       </li>
     
   </ul>
 </section>
 <section>
   <h1>Categories</h1>
-    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/flink'>Flink (2)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (3)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li><li><a href='/blog/categories/spark'>Spark (1)</a></li><li><a href='/blog/categories/mian-qiang-hui'>勉強会 (1)</a></li></ul>
+    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/esper'>Esper (1)</a></li><li><a href='/blog/categories/flink'>Flink (5)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (3)</a></li><li><a href='/blog/categories/norikra'>Norikra (1)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li><li><a href='/blog/categories/spark'>Spark (1)</a></li><li><a href='/blog/categories/streaming'>Streaming (1)</a></li><li><a href='/blog/categories/mian-qiang-hui'>勉強会 (1)</a></li></ul>
 </section>
 
   
