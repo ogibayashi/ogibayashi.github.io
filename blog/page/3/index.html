@@ -1,0 +1,618 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Tech Notes</title>
+  <meta name="author" content="OGIBAYASHI Hironori">
+
+  
+  <meta name="description" content="Fluentdが障害の時にどのような動作をするのか調べてみたので、そのメモ. td-agent 1.1.17(fluentd v0.10.39)で確認したつもりだが、もしかしたらもう少し新しいので確認したケースもあるかも. BufferedOutputを中心に記載している. &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://ogibayashi.github.io/blog/page/3">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="Tech Notes" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">Tech Notes</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:ogibayashi.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div class="blog-index">
+  
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/06/04/how-fluentd-works-in-case-of-failures/">Fluentdの障害時動作</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-06-04T23:12:23+09:00" pubdate data-updated="true">Jun 4<span>th</span>, 2014</time>
+        
+           | <a href="/blog/2014/06/04/how-fluentd-works-in-case-of-failures/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2014/06/04/how-fluentd-works-in-case-of-failures/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><p>Fluentdが障害の時にどのような動作をするのか調べてみたので、そのメモ. td-agent 1.1.17(fluentd v0.10.39)で確認したつもりだが、もしかしたらもう少し新しいので確認したケースもあるかも. BufferedOutputを中心に記載している.</p>
+
+<h2>BufferdOutputの基本</h2>
+
+<p>fluentdの特徴の一つとして、fluentd送信先で障害があり、メッセージが送れなかった場合は大抵(BufferedOutputを使っているプラグインであれば)fluentdでバッファリングし、一定時間後に再送してくれる.</p>
+
+<p>このバッファリングのサイズは、BufferedOutputプラグインのbuffer_chunk_limit*buffer_queue_limitで決まる.</p>
+
+<p>これらのデフォルト値は以下に解説付きでまとまっている. (良く参照させて頂いています)
+<a href="http://d.hatena.ne.jp/tagomoris/20130123/1358929254">FluentdでバッファつきOutputPluginを使うときのデフォルト値</a></p>
+
+<h2>何回くらいリトライするの？ リトライの間隔は？</h2>
+
+<p>リトライの回数は、retry_limit(デフォルト 17)で指定された回数まで. 間隔は一定ではなく、段々延びていく. 具体的に間隔を計算してるのは、BufferedOutput#calc_retry_wait.</p>
+
+<p>リトライ間隔は、以下のパラメータでコントロールすることができる</p>
+
+<ul>
+<li>max_retry_wait(デフォルト: nil = 上限なし)</li>
+<li>retry_wait (デフォルト: 1.0)</li>
+</ul>
+
+
+<p>同じメソッドを使って、実際にどれくらいになるのかを計算させてみた. 以下で例えば、1=>2は、一度送信に失敗してから、2回目の送信を試みるまでという意味. 単位は秒. 全てデフォルト値だと、以下の様な感じ. 最大だと、33765秒=9時間22分になる.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1=&gt;2 : 1.0799124443510373
+</span><span class='line'>2=&gt;3 : 1.8141315928054327
+</span><span class='line'>3=&gt;4 : 3.5115188260172046
+</span><span class='line'>4=&gt;5 : 7.106397160810471
+</span><span class='line'>5=&gt;6 : 14.175590112052593
+</span><span class='line'>6=&gt;7 : 31.434005639868758
+</span><span class='line'>7=&gt;8 : 68.4743252224448
+</span><span class='line'>8=&gt;9 : 116.47949944913451
+</span><span class='line'>9=&gt;10 : 279.97276701667636
+</span><span class='line'>10=&gt;11 : 487.69976826480445
+</span><span class='line'>11=&gt;12 : 909.7729519328531
+</span><span class='line'>12=&gt;13 : 2125.0559803853725
+</span><span class='line'>13=&gt;14 : 3717.0255349933364
+</span><span class='line'>14=&gt;15 : 8658.913465429461
+</span><span class='line'>15=&gt;16 : 18189.354025481873
+</span><span class='line'>16=&gt;17 : 33765.98470398931
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>例えば、max_retry_wait=120とすると、以下のようになる. 何回リトライしても、リトライ間隔の上限はmax_retry_waitまでになる.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1=&gt;2 : 1.0717022666140232
+</span><span class='line'>2=&gt;3 : 1.9866738239982864
+</span><span class='line'>3=&gt;4 : 3.9258714996769903
+</span><span class='line'>4=&gt;5 : 7.002702902759963
+</span><span class='line'>5=&gt;6 : 15.817343449261045
+</span><span class='line'>6=&gt;7 : 34.49173945537066
+</span><span class='line'>7=&gt;8 : 65.98469012616731
+</span><span class='line'>8=&gt;9 : 120
+</span><span class='line'>9=&gt;10 : 120
+</span><span class='line'>10=&gt;11 : 120
+</span><span class='line'>11=&gt;12 : 120
+</span><span class='line'>12=&gt;13 : 120
+</span><span class='line'>13=&gt;14 : 120
+</span><span class='line'>14=&gt;15 : 120
+</span><span class='line'>15=&gt;16 : 120
+</span><span class='line'>16=&gt;17 : 120
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>retry_waitを半分の0.5にすると、全てのリトライ間隔が半分になる.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>1=&gt;2 : 0.46442639898905974
+</span><span class='line'>2=&gt;3 : 0.9688421553729557
+</span><span class='line'>3=&gt;4 : 2.2291735347851613
+</span><span class='line'>4=&gt;5 : 3.545406346443683
+</span><span class='line'>5=&gt;6 : 7.824124603156501
+</span><span class='line'>6=&gt;7 : 17.564462446502926
+</span><span class='line'>7=&gt;8 : 30.97024814321994
+</span><span class='line'>8=&gt;9 : 71.84343582620227
+</span><span class='line'>9=&gt;10 : 127.87010583643446
+</span><span class='line'>10=&gt;11 : 286.751861977861
+</span><span class='line'>11=&gt;12 : 551.32668884554
+</span><span class='line'>12=&gt;13 : 1077.2785515357239
+</span><span class='line'>13=&gt;14 : 2095.196745718026
+</span><span class='line'>14=&gt;15 : 3995.080966184667
+</span><span class='line'>15=&gt;16 : 9131.408473518048
+</span><span class='line'>16=&gt;17 : 16810.484835714517
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>リトライの頻度を増やす(リトライ間隔を減らす)場合は、併せてretry_limitも変更しないと、早々にリトライアウトしてしまう、ということになるので注意.</p>
+
+<h2>リトライ回数が超過したら？</h2>
+
+<p>リトライ回数を超過した場合、secodaryディレクティブを指定しておけば、そちらに出力される. 通常は、ファイルに出力しておいて、後からリカバリに使う、というケースが多いと思う.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  &lt;secondary&gt;
+</span><span class='line'>    type file
+</span><span class='line'>    path /path/to/forward-failed
+</span><span class='line'>  &lt;/secondary&gt;</span></code></pre></td></tr></table></div></figure>
+
+
+<p>このようなケースでは、ログに以下のように出力される</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2014-06-22 07:06:40 +0900 [warn]: fluent/output.rb:352:rescue in try_flush: retry count exceededs limit. falling back to secondary output.
+</span></code></pre></td></tr></table></div></figure>
+
+
+<h2>キューが溢れたら？</h2>
+
+<p>キュー(バッファ)が溢れると、fluentdのログに以下のようなメッセージが出る.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2014-05-25 11:30:23 +0900 [warn]: fluent/engine.rb:149:rescue in emit_stream: emit transaction failed  error_class=Fluent::BufferQueueLimitError error=#&lt;Fluent::BufferQueueLimitError: queue size exceeds limit&gt;
+</span></code></pre></td></tr></table></div></figure>
+
+
+<p>この場合、inputプラグインがEngine.emitを実行する際にExceptionが発生する. プラグインが、これをrescueしていない場合、inputプラグインは停止する. rescueしている場合はinputプラグインの実装次第だが、大抵Exceptionは無視されてemitしたデータは破棄される.
+(既に溜めるためのキューがあふれているので、それしか無い)</p>
+
+<h2>送信先が復活したら?</h2>
+
+<p>再送中に送信先が復活し、再送に成功した場合は以下の様なメッセージが出力される.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2014-05-25 11:33:01 +0900 [warn]: fluent/output.rb:312:try_flush: retry succeeded. instance=70365422937420</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ここで、注意点として送信先が復活してもすぐに再送してくれるわけではない. これは、送信先とのハートビートを行っているout_forwardでも一緒. BufferedOutput#try_flushのコードを見ると分かるが、リトライ中で、まだ次のリトライ時刻に達していない場合は、送信は行わない.</p>
+
+<p>なので、retryを繰り返して再送間隔が延びている場合は、次の再送タイミングになるまでキューが溜まり続ける(もしくは、既に溢れている場合は溢れ続ける)</p>
+
+<h2>キューを強制的に送信することはできないの？</h2>
+
+<p>v0.10.59以前の場合 → リトライ中の場合以外であれば、fluentdのプロセスにSIGUSR1を送ることでキューが吐き出される. リトライ中の場合は、次のリトライタイミングまでは送信されない.全てのキューを吐き出すには、プロセスを停止するしかない.</p>
+
+<p>v0.10.59以降の場合 → リトライ中の場合含め、fluentdのプロセスにSIGUSR1を送ることでキューが吐き出される. (2014/4/4追記: @sonotsさんに頂いたコメントを反映しました)</p>
+
+<p>プロセス停止時の挙動は使用しているバッファプラグインによって異なるが</p>
+
+<ul>
+<li>buf_memoryの場合
+
+<ul>
+<li>プロセス停止時に全てのキューが吐き出される.</li>
+</ul>
+</li>
+<li>buf_fileの場合
+
+<ul>
+<li>flush_at_shutdownがtrue(デフォルト false)の場合のみ、プロセス停止時に全てのキューが吐き出される.</li>
+</ul>
+</li>
+</ul>
+
+
+<p>長くなったのでここまで.</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  
+    <article>
+      
+  <header>
+    
+      <h1 class="entry-title"><a href="/blog/2014/02/26/about-puppet-1/">Puppetを使っていて思ったことなどをまとめてみる</a></h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-02-26T22:45:06+09:00" pubdate data-updated="true">Feb 26<span>th</span>, 2014</time>
+        
+           | <a href="/blog/2014/02/26/about-puppet-1/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2014/02/26/about-puppet-1/">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+  <div class="entry-content"><h2>この記事について</h2>
+
+<p>puppetを初めて触ってから3,4年くらい経ったが、その間に思ったことなどをまとめてみる. なぜpuppetか、何に使っているか、使っていて思ったこと、課題など.</p>
+
+<h2>利用状況を簡単に</h2>
+
+<p>こんな環境で使ってます.</p>
+
+<h3>puppetの使用環境</h3>
+
+<p>CentOS 5 and 6で、puppetは2.7.21. 大体4つくらいの独立した(ネットワーク的に分断された)環境で、サーバ台数は合計百数十台. サーバ上で稼働する(した)ソフトウェアはHadoop, fluentd, MongoDB, Cassandra, MySQL, Munin等.</p>
+
+<h3>何に使っているか</h3>
+
+<p>上記ソフトウェアの環境は基本的にpuppetで構築している.が、puppetで完結できていることだけではないので、それは後述</p>
+
+<h2>使っていて思ったこと</h2>
+
+<p>今まで使っていて思ったことなどを書いてみる.</p>
+
+<h3>puppetで何が良いか</h3>
+
+<p>puppetだけではなく、chef等でも一緒だと思うけど、この手のソフトウェアを使わない場合だと、シェルスクリプトで頑張るか、VMのイメージをコピーするか、になると思う. それぞれに対して比較すると</p>
+
+<ul>
+<li>シェルスクリプト等でやる場合
+
+<ul>
+<li>色々全部自分で書かないといけないのでしんどい. 単一の環境、初回構築なら良いけど、ちょっと違う環境を作るとか、一旦作った環境に変更を加えるとか. 規模が大きくなってくると、モジュール化したり、過去に作ったものを再利用したくなるけど、その点でもつらい.</li>
+</ul>
+</li>
+<li>VMのイメージコピーの場合
+
+<ul>
+<li>既に構築済の環境に対する変更をどう適用するか、環境の変更履歴をどう管理するか、というところが課題.</li>
+</ul>
+</li>
+</ul>
+
+
+<p>puppetは、&#8221;このサーバはこうあるべき&#8221;と定義すれば、前の状態がどうであってもその状態にしてくれるので、いちいちチェックして、期待と違ったら処理をして、みたいなことを書かなくて済む. また、クラス、モジュール、等再利用性を促すような言語の機能もあるので、うまく書けば既存のコードを流用しつつ、新しい要件に対応するようにマニフェストを変更していくようなこともやりやすい.</p>
+
+<p>ただ、実はそれだけではなくてInfrastructure as Code, サーバ環境がコードで表現できるようになり、アプリケーションのコードと同じように変更管理、レビュー、テスト、デプロイができるようになるのが大きいと思う. このあたりは<a href="http://d.hatena.ne.jp/naoya/20131215/1387090668">naoyaさんの記事</a>に詳しく書かれている.</p>
+
+<h3>puppetの使いどころ</h3>
+
+<p>サーバ構築のうち、何をpuppetでやるべきか？サーバ構築はBootstrapping, Configuration, Orchestrationの3つのレイヤに分けて考えられることが多いが、この中だとConfigurationの部分をpuppetでやることが有効</p>
+
+<p>つまり、</p>
+
+<ul>
+<li>Bootstrappingに相当する部分、OSインストール、ネットワーク設定、puppet自体のインストール、はやらない(やれない)</li>
+<li>Orchestrationに相当する部分、複数台の協調操作が必要な操作もやらない. 今はここはfabric(局所的にserf)でやっている.</li>
+<li>その他、puppetが動作可能になった後のconfigurationで、単一サーバ内で完結するようなものは全てpuppetで行う.</li>
+</ul>
+
+
+<p>という感じにしている.</p>
+
+<h3>マニフェストのいい感じの書き方</h3>
+
+<p>いい感じ、というのは読みやすく、再利用しやすい、ということ. これは、使い始めてからずっと試行錯誤しているところ. そのための要素としては、以下があると思う.</p>
+
+<ol>
+<li>モジュールの書き方</li>
+<li>モジュールを組み合わせて、実際のサーバに適用するマニフェストにする部分をどう書くか</li>
+<li>環境依存する部分をどのように切り出すか</li>
+</ol>
+
+
+<p>まず、1について. モジュールはライブラリのように環境が変わっても再利用可能なものであるべき. どのような書き方が良いか、というのは<a href="http://docs.puppetlabs.com/guides/module_guides/bgtm.html">このドキュメント</a>に書かれている. puppetlabs公式のntpモジュールが、お手本としては良いらしい.</p>
+
+<p>2については、以下で紹介されている、RoleとProfileという考え方を導入するのが良い.</p>
+
+<ul>
+<li><a href="http://www.slideshare.net/PuppetLabs/roles-talk">http://www.slideshare.net/PuppetLabs/roles-talk</a></li>
+<li><a href="http://www.craigdunn.org/2012/05/239/">http://www.craigdunn.org/2012/05/239/</a></li>
+</ul>
+
+
+<p>moduleを複数まとめてprofileが構成され、さらに複数profileをまとめてroleが構成される. node(=物理ホスト)は、一つのroleに紐付けられる、という形になっている. 例えば、<code>profile::webserver</code>にはhttpdとphpが必要で、<code>role::www::dev</code>は、<code>profile::webserver</code>と<code>profile::database</code>が含まれる、みたいな形に書く. ただ、自分はまだroleの必要性がしっくりきてないので、profileとroleを分けていない.</p>
+
+<p>3については、hieraやENCを使ってあるサーバに適用するクラス(role/profile)や、そのパラメータをマニフェストの外に切り出す、というのが定番らしい. ただ、自分はまだこれらは導入していなくて、以下のように変数をまとめたクラスを作って、それを呼び出すときの引数で環境を切り替える、という風にしている. 今後はhiera or ENCに移行していきたい.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>class base_env($envname="") {
+</span><span class='line'>  case $envname {
+</span><span class='line'>    "testenv" :{
+</span><span class='line'>      $reposrv = "192.168.1.1"
+</span><span class='line'>      $repourl = "http://$reposrv/Lang/Ruby/"
+</span><span class='line'>    }
+</span><span class='line'>    default: {
+</span><span class='line'>      $masternode="192.168.1.2"
+</span><span class='line'>      $reposrv = "example.deploy.local"
+</span><span class='line'>      $repourl = "http://$reposrv/Lang/Ruby/"
+</span><span class='line'>      $gfurl="http://$masternode:5125"
+</span><span class='line'>      $munin_node=$masternode
+</span><span class='line'>      $serf_join = ['192.168.1.1','192.168.1.2']
+</span><span class='line'>      $munin_allow='^192\.168\..*$'
+</span><span class='line'>
+</span><span class='line'>    }
+</span><span class='line'>  }
+</span><span class='line'>}
+</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>class profile::base($envname="") {
+</span><span class='line'>  class{"base_env":
+</span><span class='line'>    envname =&gt; $envname
+</span><span class='line'>  }
+</span><span class='line'>  ...
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>node /hadooptest\.hadoop.local/ {
+</span><span class='line'>   class{"profile::base":
+</span><span class='line'>     envname =&gt; "testenv"
+</span><span class='line'>   }
+</span><span class='line'>}</span></code></pre></td></tr></table></div></figure>
+
+
+<h3>puppetmasterについて</h3>
+
+<p>つい最近まではpuppetmasterを使っていた. ただ、以下の問題があった.</p>
+
+<ul>
+<li>新しくサーバを構築するときにpuppetmasterが無ければ立てる必要がある</li>
+<li>証明書が面倒. 自動署名にはしてるけど、同じホスト名でサーバの再構築することもそれなりにあったので、その度に証明書のクリアが必要. クリアしてなくてうまく同期できない、というのも良くあった.</li>
+</ul>
+
+
+<p>なので、最近はgitリポジトリにmanifestを配置して、各サーバでgit clone. という風にしている. マニフェストを更新した時は、fabricを使って並列にgit pull &amp; puppet applyする. 証明書の問題から開放されたし、サーバ台数が増えてもgitリポジトリを複数にすればスケールするし、gitが無くてもmanifestだけコピーすれば環境作れるし、でとても楽になった.</p>
+
+<h2>今後の課題</h2>
+
+<p>今はできていないので、これから取り組みたいこと.</p>
+
+<h3>テスト</h3>
+
+<p>上記の通り、puppet化、というかコード化するメリットとしてCI的なものは外せないと思うのだけど、まだできていない.
+幸い<a href="http://blog.tmtk.net/2013/09/28/docker-jenkins-serverspec-puppet.ja.html">先人の事例</a>があるので、こちらを真似しながら環境はできた. ただ、まだ実験的な段階で、プロセスとして固まってない. Dockerだけでなく実機の環境もあるので、Dockerでテストして、通ったものは即検証環境に自動的にデプロイして、みたいな形にしたい.</p>
+
+<h3>外部モジュール(Puppet Forge)の利用</h3>
+
+<p>puppetを始めた当初は、公開されているモジュールがあると言っても今一つやりたいことにフィットしなくて、全て自分で書いていたのだけど、最近は公開されているものを有効活用した方が良い気がしてきた. 実際serfとかsensuとかのモジュールを使ってみたが、全然変更の必要が無く使えたので、これからは外部のものも使っていきたい. ただ、自分のいる環境はInternetにつながらないので<code>puppet module</code>コマンドは使えず、どうやって配布するかを考えないといけない. (自前リポジトリとか立てられるのかな&hellip;)</p>
+
+<h2>最後に</h2>
+
+<p>最近Infrastructure as Codeという言葉も良く聞かれるようになったし、自分も今までpuppetを使ってて思ったことを一度まとめてみようと思って書いてみた. しかし、puppetってやっぱり日本語の記事が少ない. 入門的な記事はあるのだけど、どう使ってるとか、何に困ったとか、どう工夫してるとかの情報がもっとあると良いなぁ. Qiitaでそれぞれのタグを見てみたら、Chefの投稿が242に対して、Puppetは11でした&hellip;</p>
+</div>
+  
+  
+
+
+    </article>
+  
+  <div class="pagination">
+    
+    <a href="/blog/archives">Blog Archives</a>
+    
+    <a class="next" href="/blog/page/2/">Newer &rarr;</a>
+    
+  </div>
+</div>
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/10/21/about-my-flink-deployment/">現在稼働しているFlinkクラスタについて</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/07/12/realtime-data-processing-at-facebook/">Realtime Data Processing at Facebookを読んで</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/05/13/thoughts-on-apache-flink/">Apache Flinkを試してみての感想</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/04/08/flink-state-management/">Apache Flinkのstate管理について</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/04/05/apache-flink-continuousprocessingtimetrigger/">Apache Flink ContinuousProcessingTimeTriggerの話</a>
+      </li>
+    
+  </ul>
+</section>
+<section>
+  <h1>Categories</h1>
+    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/esper'>Esper (1)</a></li><li><a href='/blog/categories/flink'>Flink (6)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (3)</a></li><li><a href='/blog/categories/linux'>Linux (1)</a></li><li><a href='/blog/categories/misc'>misc (1)</a></li><li><a href='/blog/categories/norikra'>Norikra (1)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li><li><a href='/blog/categories/spark'>Spark (1)</a></li><li><a href='/blog/categories/streaming'>Streaming (2)</a></li><li><a href='/blog/categories/mian-qiang-hui'>勉強会 (1)</a></li></ul>
+</section>
+
+  
+</aside>
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2016 - OGIBAYASHI Hironori -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+<script type="text/javascript">
+      var disqus_shortname = 'technotes-ogibayashi';
+      
+        
+        var disqus_script = 'count.js';
+      
+    (function () {
+      var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+      dsq.src = '//' + disqus_shortname + '.disqus.com/' + disqus_script;
+      (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    }());
+</script>
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>

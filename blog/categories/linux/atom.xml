@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+
+  <title><![CDATA[Category: Linux | Tech Notes]]></title>
+  <link href="http://ogibayashi.github.io/blog/categories/linux/atom.xml" rel="self"/>
+  <link href="http://ogibayashi.github.io/"/>
+  <updated>2016-10-22T07:42:43+09:00</updated>
+  <id>http://ogibayashi.github.io/</id>
+  <author>
+    <name><![CDATA[OGIBAYASHI Hironori]]></name>
+    
+  </author>
+  <generator uri="http://octopress.org/">Octopress</generator>
+
+  
+  <entry>
+    <title type="html"><![CDATA[Linuxネットワーク周りの実験1]]></title>
+    <link href="http://ogibayashi.github.io/blog/2014/08/27/linux-network-experiment-1/"/>
+    <updated>2014-08-27T19:02:47+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2014/08/27/linux-network-experiment-1</id>
+    <content type="html"><![CDATA[<h2>はじめに</h2>
+
+<p>Linuxネットワーク周りの仕組みと、カーネルパラメータの調整方法を知りたくて実験してみた. 目標としては、ネットワークで何かしらボトルネックが発生している際に、何を見て、どうパラメータなどを調整するべきなのかを知りたい.</p>
+
+<h2>使ったプログラムと環境</h2>
+
+<p>Rubyの標準ライブラリでサーバとクライアントを作った.</p>
+
+<ul>
+<li><a href="https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-client1-rb">https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-client1-rb</a></li>
+<li><a href="https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-server1-rb">https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-server1-rb</a></li>
+</ul>
+
+
+<p>サーバ環境としては、クライアント用、サーバ用に物理サーバを各1台用意した. OSはCentOS 6.2. 初期状態では、カーネルパラメータはいじっていない.</p>
+
+<h2>わかったことのまとめ</h2>
+
+<h2>backlogの実験1: listen時のbacklogを超えてクライアントが接続する</h2>
+
+<p>サーバプログラムを、listen()時のbacklogサイズを指定して起動. acceptはしない. 従って、クライアントが接続できる数は、backlogサイズで制限される想定.</p>
+
+<pre><code># ./server1.rb -b 10
+</code></pre>
+
+<p>クライアントは、100多重で接続する</p>
+
+<pre><code># ./client1.rb -h 192.168.1.3 -n 100
+</code></pre>
+
+<h3>結果</h3>
+
+<p>この実験の結果. 詳細は後述.</p>
+
+<ul>
+<li>クライアントからの接続のうち、backlogサイズ+1が接続成功、残りはタイムアウトした. 想定通り.</li>
+<li>サーバ側は、backlog + 1(11本)がESTABLISHED状態になる. SYN_RECVは4本. SYN_RECVの数が何で決まるのか不明</li>
+<li>クライアント側は、サーバでESTABLISHED+SYN_RECV状態のものがESTABLISHEDに見える. 残りはSYN_SENT.</li>
+<li>クライアントはSYN_SENTだが、サーバでは無視されているコネクションが多数存在. netstatにも計上されていない.</li>
+</ul>
+
+
+<h3>セッション状況(netstat)</h3>
+
+<p>サーバ側. backlogで指定した値+1となった. SYN_RECV状態の4本、というのが何に依存しているのかが不明</p>
+
+<pre><code># netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
+ 11 ESTABLISHED
+  1 LISTEN
+  4 SYN_RECV
+</code></pre>
+
+<p>クライアント側. サーバでSYN_RECVとなっているもの含め、15本がESTABLISHED、残りはSYN_SENTでサーバからのSYN-ACKを待っている.</p>
+
+<pre><code># netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
+ 15 ESTABLISHED
+ 85 SYN_SENT
+</code></pre>
+
+<p>しばらくすると、クライアント側は15本のESTABLISHEDのみとなった.</p>
+
+<pre><code>[root@psdata4 ~]# netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
+ 15 ESTABLISHED
+</code></pre>
+
+<h3>ネットワーク統計情報 (netstat -s)</h3>
+
+<p>backlogを溢れて落とされた分は、以下のメトリックに現れると想定. 初期状態は以下の値.</p>
+
+<pre><code>17920 SYNs to LISTEN sockets ignored
+</code></pre>
+
+<p>実行後の値. +14なので、SYN_SENTのセッション達の分は含まれていなそう</p>
+
+<pre><code>17934 SYNs to LISTEN sockets ignored
+</code></pre>
+
+<h2>backlogの実験2: backlogと同数のクライアントが接続する</h2>
+
+<p>サーバ側のbacklogは100とする. ここでも、acceptはしないので、セッションが溜まっていく想定.</p>
+
+<pre><code># ./networktest/server1.rb -b 100
+</code></pre>
+
+<p>クライアントも100多重で接続する.</p>
+
+<pre><code># ./networktest/client1.rb -h 192.168.1.3 -n 100
+</code></pre>
+
+<h3>結果</h3>
+
+<p>接続要求数分(100セッション)、ESTABLISHするようになった</p>
+
+<h3>セッション状況(netstat)</h3>
+
+<p>上がサーバ、下がクライアント. どちらから見ても100本のセッションがESTABLISHEDになっている.</p>
+
+<pre><code># netstat -na | grep 11000 | awk '{print $6}' | sort | uniq -c
+  100 ESTABLISHED
+  1 LISTEN
+</code></pre>
+
+<p>   # netstat &mdash;tcp -na | grep :11000 | awk &lsquo;{print $6}&rsquo; | sort | uniq -c</p>
+
+<pre><code>  100 ESTABLISHED
+</code></pre>
+
+<h3>ネットワーク統計情報(netstat -s)</h3>
+
+<p>開始前.</p>
+
+<pre><code>17830  SYNs to LISTEN sockets ignored
+</code></pre>
+
+<p>終了後. 特にこのメトリックの値は増えていない</p>
+
+<pre><code>17830   SYNs to LISTEN sockets ignored
+</code></pre>
+
+<h2>backlogの実験3: backlog, 接続数を200 (>somaxconn) とする.</h2>
+
+<p>今度は、前のケースと同じだが接続数を200にしてみる. somaxconnのデフォルト値が128なので、これに引っかかる想定</p>
+
+<pre><code># sysctl -a | grep somax
+net.core.somaxconn = 128
+</code></pre>
+
+<p>サーバ側.</p>
+
+<pre><code># ./server1.rb -b 200
+</code></pre>
+
+<p>クライアント側.</p>
+
+<pre><code># ./client1.rb -h 192.168.1.3 -n 200
+</code></pre>
+
+<h3>結果</h3>
+
+<p>接続確立できたセッション数は129(somaxconn + 1)だった</p>
+
+<h3>セッション状況(netstat)</h3>
+
+<p>サーバ側. 129セッションがESTABLISHEDになっている</p>
+
+<pre><code># netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
+129 ESTABLISHED
+  1 LISTEN
+  4 SYN_RECV
+</code></pre>
+
+<p>クライアント側. サーバ側でESTABLISED/SYN_RECVとなっているセッションがESTABLISHEDに見えている.</p>
+
+<pre><code>[root@psdata4 ~]# netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
+133 ESTABLISHED
+ 67 SYN_SENT
+</code></pre>
+
+<h4>ネットワーク統計情報(netstat -s)</h4>
+
+<p>開始前</p>
+
+<pre><code># netstat -s | grep SYNs
+18096 SYNs to LISTEN sockets ignored
+</code></pre>
+
+<p>終了後. やはり、増えているが67セッションがSYN_SENTのままだったことを考えると少ない.</p>
+
+<pre><code># netstat -s | grep SYNs
+18112 SYNs to LISTEN sockets ignored
+</code></pre>
+]]></content>
+  </entry>
+  
+</feed>

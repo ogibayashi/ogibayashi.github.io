@@ -1,0 +1,412 @@
+
+<!DOCTYPE html>
+<!--[if IEMobile 7 ]><html class="no-js iem7"><![endif]-->
+<!--[if lt IE 9]><html class="no-js lte-ie8"><![endif]-->
+<!--[if (gt IE 8)|(gt IEMobile 7)|!(IEMobile)|!(IE)]><!--><html class="no-js" lang="en"><!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <title>Linuxネットワーク周りの実験1 - Tech Notes</title>
+  <meta name="author" content="OGIBAYASHI Hironori">
+
+  
+  <meta name="description" content="はじめに Linuxネットワーク周りの仕組みと、カーネルパラメータの調整方法を知りたくて実験してみた. 目標としては、ネットワークで何かしらボトルネックが発生している際に、何を見て、どうパラメータなどを調整するべきなのかを知りたい. 使ったプログラムと環境 &hellip;">
+  
+
+  <!-- http://t.co/dKP3o1e -->
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+  <link rel="canonical" href="http://ogibayashi.github.io/blog/2014/08/27/linux-network-experiment-1">
+  <link href="/favicon.png" rel="icon">
+  <link href="/stylesheets/screen.css" media="screen, projection" rel="stylesheet" type="text/css">
+  <link href="/atom.xml" rel="alternate" title="Tech Notes" type="application/atom+xml">
+  <script src="/javascripts/modernizr-2.0.js"></script>
+  <script src="//ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script>!window.jQuery && document.write(unescape('%3Cscript src="./javascripts/libs/jquery.min.js"%3E%3C/script%3E'))</script>
+  <script src="/javascripts/octopress.js" type="text/javascript"></script>
+  <!--Fonts from Google"s Web font directory at http://google.com/webfonts -->
+<link href="http://fonts.googleapis.com/css?family=PT+Serif:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+<link href="http://fonts.googleapis.com/css?family=PT+Sans:regular,italic,bold,bolditalic" rel="stylesheet" type="text/css">
+
+  
+
+</head>
+
+<body   >
+  <header role="banner"><hgroup>
+  <h1><a href="/">Tech Notes</a></h1>
+  
+</hgroup>
+
+</header>
+  <nav role="navigation"><ul class="subscription" data-subscription="rss">
+  <li><a href="/atom.xml" rel="subscribe-rss" title="subscribe via RSS">RSS</a></li>
+  
+</ul>
+  
+<form action="http://google.com/search" method="get">
+  <fieldset role="search">
+    <input type="hidden" name="q" value="site:ogibayashi.github.io" />
+    <input class="search" type="text" name="q" results="0" placeholder="Search"/>
+  </fieldset>
+</form>
+  
+<ul class="main-navigation">
+  <li><a href="/">Blog</a></li>
+  <li><a href="/blog/archives">Archives</a></li>
+</ul>
+
+</nav>
+  <div id="main">
+    <div id="content">
+      <div>
+<article class="hentry" role="article">
+  
+  <header>
+    
+      <h1 class="entry-title">Linuxネットワーク周りの実験1</h1>
+    
+    
+      <p class="meta">
+        
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-08-27T19:02:47+09:00" pubdate data-updated="true">Aug 27<span>th</span>, 2014</time>
+        
+           | <a href="#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io">Comments</a>
+        
+      </p>
+    
+  </header>
+
+
+<div class="entry-content"><h2>はじめに</h2>
+
+<p>Linuxネットワーク周りの仕組みと、カーネルパラメータの調整方法を知りたくて実験してみた. 目標としては、ネットワークで何かしらボトルネックが発生している際に、何を見て、どうパラメータなどを調整するべきなのかを知りたい.</p>
+
+<h2>使ったプログラムと環境</h2>
+
+<p>Rubyの標準ライブラリでサーバとクライアントを作った.</p>
+
+<ul>
+<li><a href="https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-client1-rb">https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-client1-rb</a></li>
+<li><a href="https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-server1-rb">https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-server1-rb</a></li>
+</ul>
+
+
+<p>サーバ環境としては、クライアント用、サーバ用に物理サーバを各1台用意した. OSはCentOS 6.2. 初期状態では、カーネルパラメータはいじっていない.</p>
+
+<h2>わかったことのまとめ</h2>
+
+<h2>backlogの実験1: listen時のbacklogを超えてクライアントが接続する</h2>
+
+<p>サーバプログラムを、listen()時のbacklogサイズを指定して起動. acceptはしない. 従って、クライアントが接続できる数は、backlogサイズで制限される想定.</p>
+
+<pre><code># ./server1.rb -b 10
+</code></pre>
+
+<p>クライアントは、100多重で接続する</p>
+
+<pre><code># ./client1.rb -h 192.168.1.3 -n 100
+</code></pre>
+
+<h3>結果</h3>
+
+<p>この実験の結果. 詳細は後述.</p>
+
+<ul>
+<li>クライアントからの接続のうち、backlogサイズ+1が接続成功、残りはタイムアウトした. 想定通り.</li>
+<li>サーバ側は、backlog + 1(11本)がESTABLISHED状態になる. SYN_RECVは4本. SYN_RECVの数が何で決まるのか不明</li>
+<li>クライアント側は、サーバでESTABLISHED+SYN_RECV状態のものがESTABLISHEDに見える. 残りはSYN_SENT.</li>
+<li>クライアントはSYN_SENTだが、サーバでは無視されているコネクションが多数存在. netstatにも計上されていない.</li>
+</ul>
+
+
+<h3>セッション状況(netstat)</h3>
+
+<p>サーバ側. backlogで指定した値+1となった. SYN_RECV状態の4本、というのが何に依存しているのかが不明</p>
+
+<pre><code># netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
+ 11 ESTABLISHED
+  1 LISTEN
+  4 SYN_RECV
+</code></pre>
+
+<p>クライアント側. サーバでSYN_RECVとなっているもの含め、15本がESTABLISHED、残りはSYN_SENTでサーバからのSYN-ACKを待っている.</p>
+
+<pre><code># netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
+ 15 ESTABLISHED
+ 85 SYN_SENT
+</code></pre>
+
+<p>しばらくすると、クライアント側は15本のESTABLISHEDのみとなった.</p>
+
+<pre><code>[root@psdata4 ~]# netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
+ 15 ESTABLISHED
+</code></pre>
+
+<h3>ネットワーク統計情報 (netstat -s)</h3>
+
+<p>backlogを溢れて落とされた分は、以下のメトリックに現れると想定. 初期状態は以下の値.</p>
+
+<pre><code>17920 SYNs to LISTEN sockets ignored
+</code></pre>
+
+<p>実行後の値. +14なので、SYN_SENTのセッション達の分は含まれていなそう</p>
+
+<pre><code>17934 SYNs to LISTEN sockets ignored
+</code></pre>
+
+<h2>backlogの実験2: backlogと同数のクライアントが接続する</h2>
+
+<p>サーバ側のbacklogは100とする. ここでも、acceptはしないので、セッションが溜まっていく想定.</p>
+
+<pre><code># ./networktest/server1.rb -b 100
+</code></pre>
+
+<p>クライアントも100多重で接続する.</p>
+
+<pre><code># ./networktest/client1.rb -h 192.168.1.3 -n 100
+</code></pre>
+
+<h3>結果</h3>
+
+<p>接続要求数分(100セッション)、ESTABLISHするようになった</p>
+
+<h3>セッション状況(netstat)</h3>
+
+<p>上がサーバ、下がクライアント. どちらから見ても100本のセッションがESTABLISHEDになっている.</p>
+
+<pre><code># netstat -na | grep 11000 | awk '{print $6}' | sort | uniq -c
+  100 ESTABLISHED
+  1 LISTEN
+</code></pre>
+
+<p>   # netstat &mdash;tcp -na | grep :11000 | awk &lsquo;{print $6}&rsquo; | sort | uniq -c</p>
+
+<pre><code>  100 ESTABLISHED
+</code></pre>
+
+<h3>ネットワーク統計情報(netstat -s)</h3>
+
+<p>開始前.</p>
+
+<pre><code>17830  SYNs to LISTEN sockets ignored
+</code></pre>
+
+<p>終了後. 特にこのメトリックの値は増えていない</p>
+
+<pre><code>17830   SYNs to LISTEN sockets ignored
+</code></pre>
+
+<h2>backlogの実験3: backlog, 接続数を200 (>somaxconn) とする.</h2>
+
+<p>今度は、前のケースと同じだが接続数を200にしてみる. somaxconnのデフォルト値が128なので、これに引っかかる想定</p>
+
+<pre><code># sysctl -a | grep somax
+net.core.somaxconn = 128
+</code></pre>
+
+<p>サーバ側.</p>
+
+<pre><code># ./server1.rb -b 200
+</code></pre>
+
+<p>クライアント側.</p>
+
+<pre><code># ./client1.rb -h 192.168.1.3 -n 200
+</code></pre>
+
+<h3>結果</h3>
+
+<p>接続確立できたセッション数は129(somaxconn + 1)だった</p>
+
+<h3>セッション状況(netstat)</h3>
+
+<p>サーバ側. 129セッションがESTABLISHEDになっている</p>
+
+<pre><code># netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
+129 ESTABLISHED
+  1 LISTEN
+  4 SYN_RECV
+</code></pre>
+
+<p>クライアント側. サーバ側でESTABLISED/SYN_RECVとなっているセッションがESTABLISHEDに見えている.</p>
+
+<pre><code>[root@psdata4 ~]# netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
+133 ESTABLISHED
+ 67 SYN_SENT
+</code></pre>
+
+<h4>ネットワーク統計情報(netstat -s)</h4>
+
+<p>開始前</p>
+
+<pre><code># netstat -s | grep SYNs
+18096 SYNs to LISTEN sockets ignored
+</code></pre>
+
+<p>終了後. やはり、増えているが67セッションがSYN_SENTのままだったことを考えると少ない.</p>
+
+<pre><code># netstat -s | grep SYNs
+18112 SYNs to LISTEN sockets ignored
+</code></pre>
+</div>
+
+
+  <footer>
+    <p class="meta">
+      
+  
+
+<span class="byline author vcard">Posted by <span class="fn">OGIBAYASHI Hironori</span></span>
+
+      
+
+
+
+
+
+
+
+
+  
+
+
+<time datetime="2014-08-27T19:02:47+09:00" pubdate data-updated="true">Aug 27<span>th</span>, 2014</time>
+      
+
+<span class="categories">
+  
+    <a class='category' href='/blog/categories/linux/'>Linux</a>
+  
+</span>
+
+
+    </p>
+    
+      <div class="sharing">
+  
+  <a href="//twitter.com/share" class="twitter-share-button" data-url="http://ogibayashi.github.io/blog/2014/08/27/linux-network-experiment-1/" data-via="" data-counturl="http://ogibayashi.github.io/blog/2014/08/27/linux-network-experiment-1/" >Tweet</a>
+  
+  
+  
+</div>
+
+    
+    <p class="meta">
+      
+        <a class="basic-alignment left" href="/blog/2014/06/04/how-fluentd-works-in-case-of-failures/" title="Previous Post: Fluentdの障害時動作">&laquo; Fluentdの障害時動作</a>
+      
+      
+        <a class="basic-alignment right" href="/blog/2014/09/17/elasticsearch-study-6th/" title="Next Post: 第6回Elasticsearch勉強会">第6回Elasticsearch勉強会 &raquo;</a>
+      
+    </p>
+  </footer>
+</article>
+
+  <section>
+    <h1>Comments</h1>
+    <div id="disqus_thread" aria-live="polite"><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+</div>
+  </section>
+
+</div>
+
+<aside class="sidebar">
+  
+    <section>
+  <h1>Recent Posts</h1>
+  <ul id="recent_posts">
+    
+      <li class="post">
+        <a href="/blog/2016/10/21/about-my-flink-deployment/">現在稼働しているFlinkクラスタについて</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/07/12/realtime-data-processing-at-facebook/">Realtime Data Processing at Facebookを読んで</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/05/13/thoughts-on-apache-flink/">Apache Flinkを試してみての感想</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/04/08/flink-state-management/">Apache Flinkのstate管理について</a>
+      </li>
+    
+      <li class="post">
+        <a href="/blog/2016/04/05/apache-flink-continuousprocessingtimetrigger/">Apache Flink ContinuousProcessingTimeTriggerの話</a>
+      </li>
+    
+  </ul>
+</section>
+<section>
+  <h1>Categories</h1>
+    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/esper'>Esper (1)</a></li><li><a href='/blog/categories/flink'>Flink (6)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (3)</a></li><li><a href='/blog/categories/linux'>Linux (1)</a></li><li><a href='/blog/categories/misc'>misc (1)</a></li><li><a href='/blog/categories/norikra'>Norikra (1)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li><li><a href='/blog/categories/spark'>Spark (1)</a></li><li><a href='/blog/categories/streaming'>Streaming (2)</a></li><li><a href='/blog/categories/mian-qiang-hui'>勉強会 (1)</a></li></ul>
+</section>
+
+  
+</aside>
+
+
+    </div>
+  </div>
+  <footer role="contentinfo"><p>
+  Copyright &copy; 2016 - OGIBAYASHI Hironori -
+  <span class="credit">Powered by <a href="http://octopress.org">Octopress</a></span>
+</p>
+
+</footer>
+  
+
+<script type="text/javascript">
+      var disqus_shortname = 'technotes-ogibayashi';
+      
+        
+        // var disqus_developer = 1;
+        var disqus_identifier = 'http://ogibayashi.github.io/blog/2014/08/27/linux-network-experiment-1/';
+        var disqus_url = 'http://ogibayashi.github.io/blog/2014/08/27/linux-network-experiment-1/';
+        var disqus_script = 'embed.js';
+      
+    (function () {
+      var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+      dsq.src = '//' + disqus_shortname + '.disqus.com/' + disqus_script;
+      (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    }());
+</script>
+
+
+
+
+
+
+
+  <script type="text/javascript">
+    (function(){
+      var twitterWidgets = document.createElement('script');
+      twitterWidgets.type = 'text/javascript';
+      twitterWidgets.async = true;
+      twitterWidgets.src = '//platform.twitter.com/widgets.js';
+      document.getElementsByTagName('head')[0].appendChild(twitterWidgets);
+    })();
+  </script>
+
+
+
+
+
+</body>
+</html>
