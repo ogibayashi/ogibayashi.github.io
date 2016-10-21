@@ -11,10 +11,6 @@
         <lastmod>2015-04-04T18:14:31+09:00</lastmod>
     </url>
     <url>
-        <loc>http://ogibayashi.github.io/blog/2014/08/27/linux-network-experiment-1/</loc>
-        <lastmod>2015-04-04T18:14:31+09:00</lastmod>
-    </url>
-    <url>
         <loc>http://ogibayashi.github.io/blog/2014/09/17/elasticsearch-study-6th/</loc>
         <lastmod>2015-04-04T18:14:31+09:00</lastmod>
     </url>
@@ -55,10 +51,6 @@
         <lastmod>2015-04-04T18:14:31+09:00</lastmod>
     </url>
     <url>
-        <loc>http://ogibayashi.github.io/blog/2015/07/18/a-record-of-my-job-change/</loc>
-        <lastmod>2016-02-08T21:02:07+09:00</lastmod>
-    </url>
-    <url>
         <loc>http://ogibayashi.github.io/blog/2015/08/13/esper-and-java-method/</loc>
         <lastmod>2016-07-12T23:14:30+09:00</lastmod>
     </url>
@@ -91,12 +83,6 @@
     <url>
         <loc>http://ogibayashi.github.io/blog/2016/05/13/thoughts-on-apache-flink/</loc>
         <lastmod>2016-05-27T20:54:38+09:00</lastmod>
-    </url>
-    <url>
-        <loc>
-            http://ogibayashi.github.io/blog/2016/07/12/realtime-data-processing-at-facebook/
-        </loc>
-        <lastmod>2016-10-21T06:50:16+09:00</lastmod>
     </url>
     <url>
         <loc>http://ogibayashi.github.io/blog/2016/10/21/about-my-flink-deployment/</loc>
