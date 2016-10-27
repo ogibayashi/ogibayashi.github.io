@@ -4,7 +4,7 @@
   <title><![CDATA[Tech Notes]]></title>
   <link href="http://ogibayashi.github.io/atom.xml" rel="self"/>
   <link href="http://ogibayashi.github.io/"/>
-  <updated>2016-10-22T07:45:29+09:00</updated>
+  <updated>2016-10-27T22:25:10+09:00</updated>
   <id>http://ogibayashi.github.io/</id>
   <author>
     <name><![CDATA[OGIBAYASHI Hironori]]></name>
@@ -12,6 +12,27 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
+  
+  <entry>
+    <title type="html"><![CDATA[Hadoop Summit 2016 Tokyo に行ったメモ]]></title>
+    <link href="http://ogibayashi.github.io/blog/2016/10/27/hadoop-summit-tokyo-2016/"/>
+    <updated>2016-10-27T21:15:07+09:00</updated>
+    <id>http://ogibayashi.github.io/blog/2016/10/27/hadoop-summit-tokyo-2016</id>
+    <content type="html"><![CDATA[<p><a href="http://hadoopsummit.org/tokyo/">Hadoop Summit Tokyo</a> に行ってきたので雑に感想を.</p>
+
+<p>全体的な印象としては、Cloud, 機械学習, Spark, Zeppelinあたりの話題が目立ったなぁ、と思った. 所謂集計バッチ的なものは既にどこもやってて、その基盤の上でデータサイエンティストがSpark &amp; Zeppelinで色々試した結果できあがったもの(多くは機械学習を使ったもの)を、定常的に回すようにする、というのが割りと一般的になっている感じ.</p>
+
+<p>ちょっと前とかは、もう少しリアルタイムとかストリーム的な話題が多かったような気がするけど、そっちは少し下火になったようにも思う. まあ、実際ストリーム処理をやっていて思うのは、できると一見かっこいいけど、そこまで必要ないケースも多いし、運用負荷高いよね、ということ. バッチと比べるとより即時対応が求められるし、やり直しとかしづらいし. その割に、リアルタイム性が価値を生むようなユースケースって少ない. 今回のセッションの中であったような、不正検知、異常検知なんかは即時性が重要だけど、そのくらいなんじゃなかろうか. 大抵hourlyくらいでバッチ回せれば済んでしまう.
+とは言え、社内だと30分更新とか10分更新みたいな微妙なユースケースもあったりするので、その辺何が良いんだろうなあ、とは思う.</p>
+
+<p>SQL on Hadoopなところだと、意外にPrestoは話題に上らないなあ、と思った. 自分のところでは使っていて、とても良いと思うのだけど、その手の話題であまり出てこない.</p>
+
+<p>印象に残ったセッションは、リクルートテクノロジーズさんの、&#8221;Struggle against crossdomain data complexity in Recruit group&#8221;というもの. すごく沢山のサービスを扱ってて、ログも多様で、時々フォーマットが変わったりして、的な苦労には共感できた. そして、ロジックを共有のjar(var/log という名前らしい)に入れて、jar+XMLで処理を記述できるようにする、jarに入れる処理の部分は、Zeppelinで本番データを相手に色々試して、良さげになったらjarに組み込むことで再利用可能にする、という仕組みは良さそうに思えた.
+実行エンジンも、そのvar/log jarの中でHiveとかSparkとか、いい感じに選んでくれるっぽい. パクれそうな要素もあるような気がするので、資料が公開されたら見直してみよう.</p>
+
+<p>その他のセッションも面白かったし、久しぶりに昔の同僚とも顔を合わせたりとかして、楽しいイベントでありました.</p>
+]]></content>
+  </entry>
   
   <entry>
     <title type="html"><![CDATA[現在稼働しているFlinkクラスタについて]]></title>
@@ -2900,185 +2921,6 @@ group by account</p>
 <li>主催の@johtaniさん、会場提供のリクルートテクノロジーズさんに感謝.</li>
 </ul>
 
-]]></content>
-  </entry>
-  
-  <entry>
-    <title type="html"><![CDATA[Linuxネットワーク周りの実験1]]></title>
-    <link href="http://ogibayashi.github.io/blog/2014/08/27/linux-network-experiment-1/"/>
-    <updated>2014-08-27T19:02:47+09:00</updated>
-    <id>http://ogibayashi.github.io/blog/2014/08/27/linux-network-experiment-1</id>
-    <content type="html"><![CDATA[<h2>はじめに</h2>
-
-<p>Linuxネットワーク周りの仕組みと、カーネルパラメータの調整方法を知りたくて実験してみた. 目標としては、ネットワークで何かしらボトルネックが発生している際に、何を見て、どうパラメータなどを調整するべきなのかを知りたい.</p>
-
-<h2>使ったプログラムと環境</h2>
-
-<p>Rubyの標準ライブラリでサーバとクライアントを作った.</p>
-
-<ul>
-<li><a href="https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-client1-rb">https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-client1-rb</a></li>
-<li><a href="https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-server1-rb">https://gist.github.com/ogibayashi/4c77b4b74286fd75ce0c#file-server1-rb</a></li>
-</ul>
-
-
-<p>サーバ環境としては、クライアント用、サーバ用に物理サーバを各1台用意した. OSはCentOS 6.2. 初期状態では、カーネルパラメータはいじっていない.</p>
-
-<h2>わかったことのまとめ</h2>
-
-<h2>backlogの実験1: listen時のbacklogを超えてクライアントが接続する</h2>
-
-<p>サーバプログラムを、listen()時のbacklogサイズを指定して起動. acceptはしない. 従って、クライアントが接続できる数は、backlogサイズで制限される想定.</p>
-
-<pre><code># ./server1.rb -b 10
-</code></pre>
-
-<p>クライアントは、100多重で接続する</p>
-
-<pre><code># ./client1.rb -h 192.168.1.3 -n 100
-</code></pre>
-
-<h3>結果</h3>
-
-<p>この実験の結果. 詳細は後述.</p>
-
-<ul>
-<li>クライアントからの接続のうち、backlogサイズ+1が接続成功、残りはタイムアウトした. 想定通り.</li>
-<li>サーバ側は、backlog + 1(11本)がESTABLISHED状態になる. SYN_RECVは4本. SYN_RECVの数が何で決まるのか不明</li>
-<li>クライアント側は、サーバでESTABLISHED+SYN_RECV状態のものがESTABLISHEDに見える. 残りはSYN_SENT.</li>
-<li>クライアントはSYN_SENTだが、サーバでは無視されているコネクションが多数存在. netstatにも計上されていない.</li>
-</ul>
-
-
-<h3>セッション状況(netstat)</h3>
-
-<p>サーバ側. backlogで指定した値+1となった. SYN_RECV状態の4本、というのが何に依存しているのかが不明</p>
-
-<pre><code># netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
- 11 ESTABLISHED
-  1 LISTEN
-  4 SYN_RECV
-</code></pre>
-
-<p>クライアント側. サーバでSYN_RECVとなっているもの含め、15本がESTABLISHED、残りはSYN_SENTでサーバからのSYN-ACKを待っている.</p>
-
-<pre><code># netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
- 15 ESTABLISHED
- 85 SYN_SENT
-</code></pre>
-
-<p>しばらくすると、クライアント側は15本のESTABLISHEDのみとなった.</p>
-
-<pre><code>[root@psdata4 ~]# netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
- 15 ESTABLISHED
-</code></pre>
-
-<h3>ネットワーク統計情報 (netstat -s)</h3>
-
-<p>backlogを溢れて落とされた分は、以下のメトリックに現れると想定. 初期状態は以下の値.</p>
-
-<pre><code>17920 SYNs to LISTEN sockets ignored
-</code></pre>
-
-<p>実行後の値. +14なので、SYN_SENTのセッション達の分は含まれていなそう</p>
-
-<pre><code>17934 SYNs to LISTEN sockets ignored
-</code></pre>
-
-<h2>backlogの実験2: backlogと同数のクライアントが接続する</h2>
-
-<p>サーバ側のbacklogは100とする. ここでも、acceptはしないので、セッションが溜まっていく想定.</p>
-
-<pre><code># ./networktest/server1.rb -b 100
-</code></pre>
-
-<p>クライアントも100多重で接続する.</p>
-
-<pre><code># ./networktest/client1.rb -h 192.168.1.3 -n 100
-</code></pre>
-
-<h3>結果</h3>
-
-<p>接続要求数分(100セッション)、ESTABLISHするようになった</p>
-
-<h3>セッション状況(netstat)</h3>
-
-<p>上がサーバ、下がクライアント. どちらから見ても100本のセッションがESTABLISHEDになっている.</p>
-
-<pre><code># netstat -na | grep 11000 | awk '{print $6}' | sort | uniq -c
-  100 ESTABLISHED
-  1 LISTEN
-</code></pre>
-
-<p>   # netstat &mdash;tcp -na | grep :11000 | awk &lsquo;{print $6}&rsquo; | sort | uniq -c</p>
-
-<pre><code>  100 ESTABLISHED
-</code></pre>
-
-<h3>ネットワーク統計情報(netstat -s)</h3>
-
-<p>開始前.</p>
-
-<pre><code>17830  SYNs to LISTEN sockets ignored
-</code></pre>
-
-<p>終了後. 特にこのメトリックの値は増えていない</p>
-
-<pre><code>17830   SYNs to LISTEN sockets ignored
-</code></pre>
-
-<h2>backlogの実験3: backlog, 接続数を200 (>somaxconn) とする.</h2>
-
-<p>今度は、前のケースと同じだが接続数を200にしてみる. somaxconnのデフォルト値が128なので、これに引っかかる想定</p>
-
-<pre><code># sysctl -a | grep somax
-net.core.somaxconn = 128
-</code></pre>
-
-<p>サーバ側.</p>
-
-<pre><code># ./server1.rb -b 200
-</code></pre>
-
-<p>クライアント側.</p>
-
-<pre><code># ./client1.rb -h 192.168.1.3 -n 200
-</code></pre>
-
-<h3>結果</h3>
-
-<p>接続確立できたセッション数は129(somaxconn + 1)だった</p>
-
-<h3>セッション状況(netstat)</h3>
-
-<p>サーバ側. 129セッションがESTABLISHEDになっている</p>
-
-<pre><code># netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
-129 ESTABLISHED
-  1 LISTEN
-  4 SYN_RECV
-</code></pre>
-
-<p>クライアント側. サーバ側でESTABLISED/SYN_RECVとなっているセッションがESTABLISHEDに見えている.</p>
-
-<pre><code>[root@psdata4 ~]# netstat --tcp -na | grep :11000 | awk '{print $6}' | sort | uniq -c
-133 ESTABLISHED
- 67 SYN_SENT
-</code></pre>
-
-<h4>ネットワーク統計情報(netstat -s)</h4>
-
-<p>開始前</p>
-
-<pre><code># netstat -s | grep SYNs
-18096 SYNs to LISTEN sockets ignored
-</code></pre>
-
-<p>終了後. やはり、増えているが67セッションがSYN_SENTのままだったことを考えると少ない.</p>
-
-<pre><code># netstat -s | grep SYNs
-18112 SYNs to LISTEN sockets ignored
-</code></pre>
 ]]></content>
   </entry>
   
