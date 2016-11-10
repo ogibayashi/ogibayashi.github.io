@@ -9,7 +9,7 @@
   <meta name="author" content="OGIBAYASHI Hironori">
 
   
-  <meta name="description" content="Hadoop Summit Tokyo に行ってきたので雑に感想を. 全体的な印象としては、Cloud, 機械学習, Spark, Zeppelinあたりの話題が目立ったなぁ、と思った. 所謂集計バッチ的なものは既にどこもやってて、その基盤の上でデータサイエンティストがSpark &amp; &hellip;">
+  <meta name="description" content="自分のところでは、社内の様々なログをfluentdで集めているのだけど、それらをElasticsearchに入れて、Kibanaで見えるようした話を書いてみる. Fluentd, Elasticsearch, Kibanaな組み合わせは既に多くの人が使ってるし、ブログ等の記事も沢山ある. けど、 &hellip;">
   
 
   <!-- http://t.co/dKP3o1e -->
@@ -69,7 +69,7 @@
       
   <header>
     
-      <h1 class="entry-title"><a href="/blog/2016/10/27/hadoop-summit-tokyo-2016/">Hadoop Summit 2016 Tokyo に行ったメモ</a></h1>
+      <h1 class="entry-title"><a href="/blog/2016/11/09/fluentd-elasticsearch-kibana/">多種多様なログをFluentd-Elasticsearch-Kibanaしたメモ</a></h1>
     
     
       <p class="meta">
@@ -85,29 +85,244 @@
   
 
 
-<time datetime="2016-10-27T21:15:07+09:00" pubdate data-updated="true">Oct 27<span>th</span>, 2016</time>
+<time datetime="2016-11-09T19:36:46+09:00" pubdate data-updated="true">Nov 9<span>th</span>, 2016</time>
         
-           | <a href="/blog/2016/10/27/hadoop-summit-tokyo-2016/#disqus_thread"
-             data-disqus-identifier="http://ogibayashi.github.io/blog/2016/10/27/hadoop-summit-tokyo-2016/">Comments</a>
+           | <a href="/blog/2016/11/09/fluentd-elasticsearch-kibana/#disqus_thread"
+             data-disqus-identifier="http://ogibayashi.github.io/blog/2016/11/09/fluentd-elasticsearch-kibana/">Comments</a>
         
       </p>
     
   </header>
 
 
-  <div class="entry-content"><p><a href="http://hadoopsummit.org/tokyo/">Hadoop Summit Tokyo</a> に行ってきたので雑に感想を.</p>
+  <div class="entry-content"><p>自分のところでは、社内の様々なログをfluentdで集めているのだけど、それらをElasticsearchに入れて、Kibanaで見えるようした話を書いてみる.</p>
 
-<p>全体的な印象としては、Cloud, 機械学習, Spark, Zeppelinあたりの話題が目立ったなぁ、と思った. 所謂集計バッチ的なものは既にどこもやってて、その基盤の上でデータサイエンティストがSpark &amp; Zeppelinで色々試した結果できあがったもの(多くは機械学習を使ったもの)を、定常的に回すようにする、というのが割りと一般的になっている感じ.</p>
+<p>Fluentd, Elasticsearch, Kibanaな組み合わせは既に多くの人が使ってるし、ブログ等の記事も沢山ある. けど、いくつか
+引っ掛かった点などもあるので、それらを書き留めて置こうと思う.</p>
 
-<p>ちょっと前とかは、もう少しリアルタイムとかストリーム的な話題が多かったような気がするけど、そっちは少し下火になったようにも思う. まあ、実際ストリーム処理をやっていて思うのは、できると一見かっこいいけど、そこまで必要ないケースも多いし、運用負荷高いよね、ということ. バッチと比べるとより即時対応が求められるし、やり直しとかしづらいし. その割に、リアルタイム性が価値を生むようなユースケースって少ない. 今回のセッションの中であったような、不正検知、異常検知なんかは即時性が重要だけど、そのくらいなんじゃなかろうか. 大抵hourlyくらいでバッチ回せれば済んでしまう.
-とは言え、社内だと30分更新とか10分更新みたいな微妙なユースケースもあったりするので、その辺何が良いんだろうなあ、とは思う.</p>
+<h2>要件</h2>
 
-<p>SQL on Hadoopなところだと、意外にPrestoは話題に上らないなあ、と思った. 自分のところでは使っていて、とても良いと思うのだけど、その手の話題であまり出てこない.</p>
+<ul>
+<li>fluentdでストリームで集めてるログを、リアルタイムに近い鮮度でKibanaで見たい.
 
-<p>印象に残ったセッションは、リクルートテクノロジーズさんの、&#8221;Struggle against crossdomain data complexity in Recruit group&#8221;というもの. すごく沢山のサービスを扱ってて、ログも多様で、時々フォーマットが変わったりして、的な苦労には共感できた. そして、ロジックを共有のjar(var/log という名前らしい)に入れて、jar+XMLで処理を記述できるようにする、jarに入れる処理の部分は、Zeppelinで本番データを相手に色々試して、良さげになったらjarに組み込むことで再利用可能にする、という仕組みは良さそうに思えた.
-実行エンジンも、そのvar/log jarの中でHiveとかSparkとか、いい感じに選んでくれるっぽい. パクれそうな要素もあるような気がするので、資料が公開されたら見直してみよう.</p>
+<ul>
+<li>見たい、というのは検索したり、集計・可視化したり、ということ</li>
+</ul>
+</li>
+<li>Kibanaでは短期(2日とか)のログが見えれば良い</li>
+<li>規模感的には、ログの種類(=fluentdのtag数)が200くらい、流量はピークで2万メッセージ/秒くらい.
 
-<p>その他のセッションも面白かったし、久しぶりに昔の同僚とも顔を合わせたりとかして、楽しいイベントでありました.</p>
+<ul>
+<li>が、実際には最も流量の多いログは除いたので、この半分〜3分の1くらいの流量</li>
+<li>10shard/index にしてあるので、２日分だと4000 shardくらいになる. これはかなり多いと思う</li>
+</ul>
+</li>
+<li>ログの種類が増えたときも、人手をかけずにKibanaで見えるようになって欲しい</li>
+</ul>
+
+
+<h2>構成</h2>
+
+<p>fluentd→Kafka→<a href="https://github.com/treasure-data/kafka-fluentd-consumer">kafka-fluentd-consumer</a>→fluentd→Elasticsearch</p>
+
+<p>な感じ. Elasticsearchへの投入が詰まる、的な話はよくあるけど、Kafkaを挟んでいるのでfluentdの他の経路に影響が出ることは無いようになっている.</p>
+
+<h2>経験した問題と対応</h2>
+
+<h3>fluentdからの投入タイムアウト</h3>
+
+<p>これに出会ったのは大分前なのだけど、流量が多い場合にバッファのサイズが大きくなると、Elasticsearchへの投入でタイムアウトが発生したりした.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2015-09-30 18:02:48 +0900 [warn]: temporarily failed to flush the buffer. next_retry=2015-09-30 18:01:02 +0900 error_class="Fluent::ElasticsearchOutput::ConnectionFailure" error="Could not push logs to Elasticsearch after 2 retries. read timeout reached" plugin_id="object:3fe40898b7d8"</span></code></pre></td></tr></table></div></figure>
+
+
+<p>対応として、fluent-plugin-elasticsearchの設定で<code>request_timeout</code>を長めに設定している.</p>
+
+<h3>Size of the emitted data exceeds buffer_chunk_limit</h3>
+
+<p>kafka-fluentd-consumer からログを受けているfluentdで、以下のようなwarningが多発した.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>2016-07-31 21:22:51 +0900 [warn]: Size of the emitted data exceeds buffer_chunk_limit.
+</span><span class='line'>2016-07-31 21:22:51 +0900 [warn]: This may occur problems in the output plugins ``at this server.``
+</span><span class='line'>2016-07-31 21:22:51 +0900 [warn]: To avoid problems, set a smaller number to the buffer_chunk_limit
+</span><span class='line'>2016-07-31 21:22:51 +0900 [warn]: in the forward output ``at the log forwarding server.``</span></code></pre></td></tr></table></div></figure>
+
+
+<p>fluentdがin_forwardで受け取ったchunkのサイズが、受け側fluentdでのbuffer_chunk_limit(デフォルト8MB)より大きいよ、という
+メッセージ.</p>
+
+<p>kafka-fluentd-consumerが大きいchunkで送信していたと思われる. 当時はこれを制御する術は無かったのだけど、issueをあげたら
+対応してもらえた. このためにkafka-fluentd-consumerが内部で使っている<a href="https://github.com/komamitsu/fluency">Fluency</a>にも、改修を入れてくれた様子. 有り難い.</p>
+
+<p><a href="https://github.com/treasure-data/kafka-fluentd-consumer/issues/15">https://github.com/treasure-data/kafka-fluentd-consumer/issues/15</a></p>
+
+<p>こんな感じで、Fluencyのバッファ周りのパラメータを指定できるようになったので、<code>fluentd.client.buffer.chunk.retention.bytes</code>がfluentdのbuffer_chunk_limitより小さくなるようにした.
+あとは、Elasticsearchに投入するfluentdプロセスの数を多めにして、一つ一つの負荷が大きくならないようにしている.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>fluentd.client.buffer.chunk.initial.bytes = 1000000
+</span><span class='line'>fluentd.client.buffer.chunk.retention.bytes = 8000000
+</span><span class='line'>fluentd.client.buffer.max.bytes = 512000000</span></code></pre></td></tr></table></div></figure>
+
+
+<p>実際には、この設定を入れる前の段階で(なぜか)warningが消えていたので、明確にこれの効果があったのかは不明. だけど、その後ログの流量を大分増やしたりしても
+出ていないので、多分効果はあったのだろう.</p>
+
+<h3>日付が変わったタイミングでElasticsearchが固まる問題</h3>
+
+<p>時系列データなので、indexは<code>somelog-YYYY.MM.DD</code>のような形で、日毎に分けるようにしている. 一部のログだけを入れていた時は特に問題は無かったのだけど、
+全ての(大体200種類の)ログを入れるようにした所、日付が変わった際にElasticsearchへのindexingが固まる、という事象に出会った.</p>
+
+<p><img src="/images/2016/Elasticsearch_indexing_rate.png" alt="Elasticsearch_indexing_rate" /></p>
+
+<p>Elasticsearchのログを見ると、以下のようなログが大量に発生している.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>ProcessClusterEventTimeoutException[failed to process cluster event (put-mapping [fluentd]) within 30s]
+</span><span class='line'>at org.elasticsearch.cluster.service.InternalClusterService$2$1.run(InternalClusterService.java:349)
+</span><span class='line'>at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142)
+</span><span class='line'>at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617)
+</span><span class='line'>at java.lang.Thread.run(Thread.java:745)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>これについては、Elasticsearchのフォーラムで質問をしてみた.
+<a href="https://discuss.elastic.co/t/timeout-exception-with-many-time-based-indices-after-00-00/63340/1">https://discuss.elastic.co/t/timeout-exception-with-many-time-based-indices-after-00-00/63340/1</a></p>
+
+<p>mapping等の情報はcluster stateと呼ばれるメタデータで管理されていて、これの更新はシングルスレッドになっている. dynamic mappingを使っている場合、
+新規indexの作成時に新たなmappingの作成も発生し、indexの数が多い場合は、これが大量に発生するために固まったような状態になるのだろう、ということ.</p>
+
+<p>対策として、ここで教えてもらったように、翌日分のindexを事前に作成しておくようにした.</p>
+
+<h3>フィールド名にドットが含まれている場合の問題</h3>
+
+<p>色々なログが入って来た結果、フィールド名にドットが含まれているものがあり、以下のようなエラーが発生</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+<span class='line-number'>13</span>
+<span class='line-number'>14</span>
+<span class='line-number'>15</span>
+<span class='line-number'>16</span>
+<span class='line-number'>17</span>
+<span class='line-number'>18</span>
+<span class='line-number'>19</span>
+<span class='line-number'>20</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>[2016-11-10 11:30:06,915][DEBUG][action.admin.indices.mapping.put] [ESHOST1] failed to put mappings on indices [[some.log-2016.11.10]], type [fluentd]
+</span><span class='line'>MapperParsingException[Field name [somefield.channel] cannot contain '.']
+</span><span class='line'>        at org.elasticsearch.index.mapper.object.ObjectMapper$TypeParser.parseProperties(ObjectMapper.java:277)
+</span><span class='line'>        at org.elasticsearch.index.mapper.object.ObjectMapper$TypeParser.parseObjectOrDocumentTypeProperties(ObjectMapper.java:222)
+</span><span class='line'>        at org.elasticsearch.index.mapper.object.ObjectMapper$TypeParser.parse(ObjectMapper.java:197)
+</span><span class='line'>        at org.elasticsearch.index.mapper.object.ObjectMapper$TypeParser.parseProperties(ObjectMapper.java:309)
+</span><span class='line'>        at org.elasticsearch.index.mapper.object.ObjectMapper$TypeParser.parseObjectOrDocumentTypeProperties(ObjectMapper.java:222)
+</span><span class='line'>        at org.elasticsearch.index.mapper.object.RootObjectMapper$TypeParser.parse(RootObjectMapper.java:139)
+</span><span class='line'>        at org.elasticsearch.index.mapper.DocumentMapperParser.parse(DocumentMapperParser.java:118)
+</span><span class='line'>        at org.elasticsearch.index.mapper.DocumentMapperParser.parse(DocumentMapperParser.java:99)
+</span><span class='line'>        at org.elasticsearch.index.mapper.MapperService.parse(MapperService.java:549)
+</span><span class='line'>        at org.elasticsearch.cluster.metadata.MetaDataMappingService$PutMappingExecutor.applyRequest(MetaDataMappingService.java:257)
+</span><span class='line'>        at org.elasticsearch.cluster.metadata.MetaDataMappingService$PutMappingExecutor.execute(MetaDataMappingService.java:230)
+</span><span class='line'>        at org.elasticsearch.cluster.service.InternalClusterService.runTasksForExecutor(InternalClusterService.java:468)
+</span><span class='line'>        at org.elasticsearch.cluster.service.InternalClusterService$UpdateTask.run(InternalClusterService.java:772)
+</span><span class='line'>        at org.elasticsearch.common.util.concurrent.PrioritizedEsThreadPoolExecutor$TieBreakingPrioritizedRunnable.runAndClean(PrioritizedEsThreadPoolExecutor.java:231)
+</span><span class='line'>        at org.elasticsearch.common.util.concurrent.PrioritizedEsThreadPoolExecutor$TieBreakingPrioritizedRunnable.run(PrioritizedEsThreadPoolExecutor.java:194)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142)
+</span><span class='line'>        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617)
+</span><span class='line'>        at java.lang.Thread.run(Thread.java:745)</span></code></pre></td></tr></table></div></figure>
+
+
+<p>ドットを含むフィールド名の扱いはバージョンによって違っていて、1.xでは可能だったが、2.xでは不可になった.
+<a href="https://www.elastic.co/guide/en/elasticsearch/reference/2.0/breaking_20_mapping_changes.html#_field_names_may_not_contain_dots">https://www.elastic.co/guide/en/elasticsearch/reference/2.0/breaking_20_mapping_changes.html#_field_names_may_not_contain_dots</a></p>
+
+<p>その後、2.4以降では起動時のオプションに<code>-Dmapper.allow_dots_in_name=true</code>を付けると、ドットを含むフィールド名も入るようになった.
+<a href="https://www.elastic.co/guide/en/elasticsearch/reference/2.4/dots-in-names.html">https://www.elastic.co/guide/en/elasticsearch/reference/2.4/dots-in-names.html</a></p>
+
+<p>そして、5.0以降では再びドットを含むフィールドがOKになった. 今使っているElasticsearchは2.4.0なので、オプションで解決することもできたが、
+開発者がドットを含まない形にログの形式を変更してくれることになった.</p>
+
+<h3>Kibanaでのindex pattern作成が面倒</h3>
+
+<p>kafka-fluentd-consumerは、Kafkaから読み込むtopicを正規表現のパターンで指定することができて、fluentd tag=topicが増えた場合は自動的に追随してくれる.
+なので、ログの種類が増えてもElasticsearchまでは自動的に格納される.</p>
+
+<p>が、Kibanaで見るためにはindex patternの設定が必要になる. これを毎回やるのは面倒なので、どうにかしたい.</p>
+
+<p>同じような要望はあって、この操作をAPIでできるようにして欲しい、というissueが存在している. <a href="https://github.com/elastic/kibana/issues/5199">https://github.com/elastic/kibana/issues/5199</a></p>
+
+<p>結構長く存在するissueだが、対応されてKibana5ではできるようになるらしい.</p>
+
+<p>が、Kibana5はつい先日GAが出たばかり. 使っているのはまだKibana4だ. Kibana4では、index patternを始めKibana上で作ったオブジェクトの定義は、.kibanaというindexに格納されているので、
+これを自分で作る方針にする.</p>
+
+<p>.kibanaに格納されているindex patternの定義は、例えばこんな感じ.</p>
+
+<figure class='code'><div class="highlight"><table><tr><td class="gutter"><pre class="line-numbers"><span class='line-number'>1</span>
+<span class='line-number'>2</span>
+<span class='line-number'>3</span>
+<span class='line-number'>4</span>
+<span class='line-number'>5</span>
+<span class='line-number'>6</span>
+<span class='line-number'>7</span>
+<span class='line-number'>8</span>
+<span class='line-number'>9</span>
+<span class='line-number'>10</span>
+<span class='line-number'>11</span>
+<span class='line-number'>12</span>
+</pre></td><td class='code'><pre><code class=''><span class='line'>  {
+</span><span class='line'>      "_index": ".kibana",
+</span><span class='line'>      "_type": "index-pattern",
+</span><span class='line'>      "_id": "log.hiveserver2-*",
+</span><span class='line'>      "_version": 2,
+</span><span class='line'>      "_score": 1,
+</span><span class='line'>      "_source": {
+</span><span class='line'>          "title": "log.hiveserver2-*",
+</span><span class='line'>          "timeFieldName": "@timestamp",
+</span><span class='line'>          "fields": "[{"name":"_index","type":"string","count":0,"scripted":false,"indexed":false,"analyzed":false,"doc_values":false},{"name":"_source","type":"_source","count":0,"scripted":false,"indexed":false,"analyzed":false,"doc_values":false},{"name":"tag_key","type":"string","count":0,"scripted":false,"indexed":true,"analyzed":false,"doc_values":true},{"name":"message","type":"string","count":0,"scripted":false,"indexed":true,"analyzed":false,"doc_values":true},{"name":"hostname","type":"string","count":0,"scripted":false,"indexed":true,"analyzed":false,"doc_values":true},{"name":"@timestamp","type":"date","count":0,"scripted":false,"indexed":true,"analyzed":false,"doc_values":true},{"name":"_id","type":"string","count":0,"scripted":false,"indexed":false,"analyzed":false,"doc_values":false},{"name":"_type","type":"string","count":0,"scripted":false,"indexed":false,"analyzed":false,"doc_values":false},{"name":"_score","type":"number","count":0,"scripted":false,"indexed":false,"analyzed":false,"doc_values":false}]"
+</span><span class='line'>      }
+</span><span class='line'>  }</span></code></pre></td></tr></table></div></figure>
+
+
+<p>fieldsの中身がちょっと面倒. 基本的には、既存のindexのmappingを取得し、Kibanaのソースコードを参考にしながら定義を作る.</p>
+
+<p><a href="https://github.com/elastic/kibana/blob/4.6/src/ui/public/index_patterns/_map_field.js">https://github.com/elastic/kibana/blob/4.6/src/ui/public/index_patterns/_map_field.js</a>
+<a href="https://github.com/elastic/kibana/blob/4.6/src/ui/public/index_patterns/_cast_mapping_type.js">https://github.com/elastic/kibana/blob/4.6/src/ui/public/index_patterns/_cast_mapping_type.js</a></p>
+
+<p>例えば、<code>indexed</code>フィールドは、mappingの中の<code>index</code>フィールドが存在しない、または<code>no</code>のときのみ<code>false</code>として、その他の場合は<code>true</code>にする. とか、ElasticsaerchとKibanaでは型が違うので、long→numberみたいに変換する、とか.</p>
+
+<p>これも、日次のバッチで回すようにした</p>
+
+<h2>まとめ</h2>
+
+<ul>
+<li>こんな感じで様々なログを、Elasticsearch+Kibanaで見ることができるようになった.</li>
+<li>fluentd→Elasticsearchについては、以下の部分がキャパシティ的に問題になりやすい印象
+
+<ul>
+<li>fluentd: 流量が多いと普通にCPUが上がって詰まる. 対策として、プロセスを増やして負荷分散する</li>
+<li>Elasticsearch: 流量よりは、index数(shard数)が増えることに対して注意がいる. 流量はスケールアウトで対応できるが、cluster state管理の部分はスケールしない. 今回は、日付が切り替わった際の翌日分index作成で問題がおきたので、事前にindexを作成することで対応した. できるだけ、index数は多くなりすぎないように設計した方が良いと思う.</li>
+</ul>
+</li>
+</ul>
+
 </div>
   
   
@@ -1381,7 +1596,7 @@ group by account</p>
   <ul id="recent_posts">
     
       <li class="post">
-        <a href="/blog/2016/10/27/hadoop-summit-tokyo-2016/">Hadoop Summit 2016 Tokyo に行ったメモ</a>
+        <a href="/blog/2016/11/09/fluentd-elasticsearch-kibana/">多種多様なログをFluentd-Elasticsearch-Kibanaしたメモ</a>
       </li>
     
       <li class="post">
@@ -1404,7 +1619,7 @@ group by account</p>
 </section>
 <section>
   <h1>Categories</h1>
-    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (1)</a></li><li><a href='/blog/categories/esper'>Esper (1)</a></li><li><a href='/blog/categories/flink'>Flink (6)</a></li><li><a href='/blog/categories/fluentd'>fluentd (4)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (4)</a></li><li><a href='/blog/categories/norikra'>Norikra (1)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li><li><a href='/blog/categories/spark'>Spark (1)</a></li><li><a href='/blog/categories/streaming'>Streaming (1)</a></li><li><a href='/blog/categories/mian-qiang-hui'>勉強会 (1)</a></li></ul>
+    <ul id="category-list"><li><a href='/blog/categories/docker'>Docker (1)</a></li><li><a href='/blog/categories/elasticsearch'>elasticsearch (2)</a></li><li><a href='/blog/categories/esper'>Esper (1)</a></li><li><a href='/blog/categories/flink'>Flink (6)</a></li><li><a href='/blog/categories/fluentd'>fluentd (5)</a></li><li><a href='/blog/categories/hadoop'>Hadoop (3)</a></li><li><a href='/blog/categories/norikra'>Norikra (1)</a></li><li><a href='/blog/categories/openshift'>openshift (1)</a></li><li><a href='/blog/categories/puppet'>puppet (1)</a></li><li><a href='/blog/categories/spark'>Spark (1)</a></li><li><a href='/blog/categories/streaming'>Streaming (1)</a></li><li><a href='/blog/categories/mian-qiang-hui'>勉強会 (1)</a></li></ul>
 </section>
 
   

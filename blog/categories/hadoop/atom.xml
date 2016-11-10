@@ -4,7 +4,7 @@
   <title><![CDATA[Category: Hadoop | Tech Notes]]></title>
   <link href="http://ogibayashi.github.io/blog/categories/hadoop/atom.xml" rel="self"/>
   <link href="http://ogibayashi.github.io/"/>
-  <updated>2016-10-27T22:25:48+09:00</updated>
+  <updated>2016-11-10T11:55:12+09:00</updated>
   <id>http://ogibayashi.github.io/</id>
   <author>
     <name><![CDATA[OGIBAYASHI Hironori]]></name>
@@ -12,27 +12,6 @@
   </author>
   <generator uri="http://octopress.org/">Octopress</generator>
 
-  
-  <entry>
-    <title type="html"><![CDATA[Hadoop Summit 2016 Tokyo に行ったメモ]]></title>
-    <link href="http://ogibayashi.github.io/blog/2016/10/27/hadoop-summit-tokyo-2016/"/>
-    <updated>2016-10-27T21:15:07+09:00</updated>
-    <id>http://ogibayashi.github.io/blog/2016/10/27/hadoop-summit-tokyo-2016</id>
-    <content type="html"><![CDATA[<p><a href="http://hadoopsummit.org/tokyo/">Hadoop Summit Tokyo</a> に行ってきたので雑に感想を.</p>
-
-<p>全体的な印象としては、Cloud, 機械学習, Spark, Zeppelinあたりの話題が目立ったなぁ、と思った. 所謂集計バッチ的なものは既にどこもやってて、その基盤の上でデータサイエンティストがSpark &amp; Zeppelinで色々試した結果できあがったもの(多くは機械学習を使ったもの)を、定常的に回すようにする、というのが割りと一般的になっている感じ.</p>
-
-<p>ちょっと前とかは、もう少しリアルタイムとかストリーム的な話題が多かったような気がするけど、そっちは少し下火になったようにも思う. まあ、実際ストリーム処理をやっていて思うのは、できると一見かっこいいけど、そこまで必要ないケースも多いし、運用負荷高いよね、ということ. バッチと比べるとより即時対応が求められるし、やり直しとかしづらいし. その割に、リアルタイム性が価値を生むようなユースケースって少ない. 今回のセッションの中であったような、不正検知、異常検知なんかは即時性が重要だけど、そのくらいなんじゃなかろうか. 大抵hourlyくらいでバッチ回せれば済んでしまう.
-とは言え、社内だと30分更新とか10分更新みたいな微妙なユースケースもあったりするので、その辺何が良いんだろうなあ、とは思う.</p>
-
-<p>SQL on Hadoopなところだと、意外にPrestoは話題に上らないなあ、と思った. 自分のところでは使っていて、とても良いと思うのだけど、その手の話題であまり出てこない.</p>
-
-<p>印象に残ったセッションは、リクルートテクノロジーズさんの、"Struggle against crossdomain data complexity in Recruit group"というもの. すごく沢山のサービスを扱ってて、ログも多様で、時々フォーマットが変わったりして、的な苦労には共感できた. そして、ロジックを共有のjar(var/log という名前らしい)に入れて、jar+XMLで処理を記述できるようにする、jarに入れる処理の部分は、Zeppelinで本番データを相手に色々試して、良さげになったらjarに組み込むことで再利用可能にする、という仕組みは良さそうに思えた.
-実行エンジンも、そのvar/log jarの中でHiveとかSparkとか、いい感じに選んでくれるっぽい. パクれそうな要素もあるような気がするので、資料が公開されたら見直してみよう.</p>
-
-<p>その他のセッションも面白かったし、久しぶりに昔の同僚とも顔を合わせたりとかして、楽しいイベントでありました.</p>
-]]></content>
-  </entry>
   
   <entry>
     <title type="html"><![CDATA[Hadoop / Spark Conference Japan 2016 に行ってきた]]></title>
